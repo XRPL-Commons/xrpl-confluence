@@ -9,6 +9,7 @@ rippled = import_module("./src/rippled/rippled.star")
 goxrpl = import_module("./src/goxrpl/goxrpl.star")
 topology = import_module("./src/topology.star")
 tests = import_module("./src/tests/tests.star")
+dashboard = import_module("./src/dashboard/dashboard.star")
 
 DEFAULT_RIPPLED_COUNT = 3
 DEFAULT_GOXRPL_COUNT = 2
@@ -41,6 +42,10 @@ def run(plan, args = {}):
 
     # Launch goXRPL nodes
     goxrpl_nodes = goxrpl.launch(plan, goxrpl_count, goxrpl_image, network_config)
+
+    # Launch monitoring dashboard
+    dashboard_files = plan.upload_files(src = "./dashboard", name = "dashboard-files")
+    dashboard.launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files)
 
     # Run interop test suite
     all_nodes = rippled_nodes + goxrpl_nodes
