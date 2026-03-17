@@ -170,6 +170,18 @@ header {
   margin-bottom: 16px;
 }
 
+.node-name-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.node-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
 .node-name {
   font-size: 15px;
   font-weight: 600;
@@ -262,7 +274,7 @@ header {
 .topology-svg {
   width: 100%;
   max-width: 700px;
-  height: 300px;
+  height: 340px;
 }
 
 .topo-link {
@@ -308,6 +320,14 @@ header {
   font-family: var(--font);
   text-anchor: middle;
   dominant-baseline: central;
+  pointer-events: none;
+}
+
+.topo-node-name {
+  fill: var(--text);
+  font-size: 10px;
+  font-family: var(--font);
+  text-anchor: middle;
   pointer-events: none;
 }
 

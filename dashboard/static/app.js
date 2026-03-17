@@ -5,6 +5,22 @@
   let prevLedgerSeqs = {};
   let timelineEntries = [];
 
+  // Inline SVG logos
+  const LOGO_CPP = `<svg viewBox="0 0 32 32" class="node-logo"><rect x="2" y="4" width="28" height="24" rx="4" fill="#659AD2"/><rect x="2" y="4" width="28" height="12" rx="4" fill="#00599C"/><rect x="2" y="12" width="28" height="4" fill="#00599C"/><text x="16" y="20" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="#fff">C++</text></svg>`;
+  const LOGO_GO = `<svg viewBox="0 0 32 32" class="node-logo"><circle cx="16" cy="16" r="14" fill="#00ADD8"/><circle cx="11" cy="13" r="3" fill="#fff"/><circle cx="21" cy="13" r="3" fill="#fff"/><circle cx="11" cy="13" r="1.5" fill="#000"/><circle cx="21" cy="13" r="1.5" fill="#000"/><path d="M10 21 Q16 25 22 21" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/><rect x="12" y="3" rx="1" width="3" height="5" fill="#00ADD8" transform="rotate(-15 13.5 5.5)"/><rect x="17" y="3" rx="1" width="3" height="5" fill="#00ADD8" transform="rotate(15 18.5 5.5)"/></svg>`;
+
+  function logoFor(type) {
+    return type === "rippled" ? LOGO_CPP : LOGO_GO;
+  }
+
+  // Small logo for topology nodes (returns SVG content to embed inside the main SVG)
+  function topoLogoFor(type, cx, cy) {
+    if (type === "rippled") {
+      return `<g transform="translate(${cx - 10}, ${cy - 8})"><rect x="0" y="1" width="20" height="15" rx="3" fill="#00599C"/><text x="10" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="8" fill="#fff">C++</text></g>`;
+    }
+    return `<g transform="translate(${cx - 9}, ${cy - 9})"><circle cx="9" cy="9" r="9" fill="#00ADD8"/><circle cx="6.5" cy="7.5" r="1.8" fill="#fff"/><circle cx="11.5" cy="7.5" r="1.8" fill="#fff"/><circle cx="6.5" cy="7.5" r="0.9" fill="#000"/><circle cx="11.5" cy="7.5" r="0.9" fill="#000"/><path d="M5.5 12.5 Q9 15 12.5 12.5" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/></g>`;
+  }
+
   // SSE connection
   function connectSSE() {
     const es = new EventSource("/events");
@@ -94,7 +110,10 @@
 
     card.innerHTML = `
       <div class="node-card-header">
-        <span class="node-name">${node.name}</span>
+        <div class="node-name-group">
+          ${logoFor(node.type)}
+          <span class="node-name">${node.name}</span>
+        </div>
         <span class="node-type-badge ${node.type}">${node.type}</span>
       </div>
       <div class="node-status">
@@ -138,7 +157,7 @@
     const svg = document.getElementById("topology-svg");
     if (!svg || nodes.length === 0) return;
 
-    const W = 700, H = 300;
+    const W = 700, H = 340;
     const cx = W / 2, cy = H / 2;
     const R = Math.min(W, H) / 2 - 50;
     const n = nodes.length;
@@ -166,10 +185,16 @@
       const p = positions[i];
       const cls = node.status !== "ok" ? "unreachable" : node.type;
       const seq = node.validated_ledger ? `#${node.validated_ledger.seq}` : "";
+      const shortName = node.name.replace("rippled-", "R").replace("goxrpl-", "G");
       html += `<g class="topo-node">`;
       html += `<circle class="topo-node-circle ${cls}" cx="${p.x}" cy="${p.y}" r="24"/>`;
-      html += `<text class="topo-node-label" x="${p.x}" y="${p.y}">${node.name.replace("rippled-", "R").replace("goxrpl-", "G")}</text>`;
-      html += `<text class="topo-node-seq" x="${p.x}" y="${p.y + 38}">${seq}</text>`;
+      if (node.status === "ok") {
+        html += topoLogoFor(node.type, p.x, p.y);
+      } else {
+        html += `<text class="topo-node-label" x="${p.x}" y="${p.y}">${shortName}</text>`;
+      }
+      html += `<text class="topo-node-name" x="${p.x}" y="${p.y + 34}">${node.name}</text>`;
+      html += `<text class="topo-node-seq" x="${p.x}" y="${p.y + 46}">${seq}</text>`;
       html += `</g>`;
     }
 

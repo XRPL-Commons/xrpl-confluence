@@ -28,7 +28,7 @@ def run(plan, args = {}):
     """
     rippled_count = args.get("rippled_count", DEFAULT_RIPPLED_COUNT)
     goxrpl_count = args.get("goxrpl_count", DEFAULT_GOXRPL_COUNT)
-    rippled_image = args.get("rippled_image", "rippleci/rippled:latest")
+    rippled_image = args.get("rippled_image", "rippleci/rippled:2.6.2")
     goxrpl_image = args.get("goxrpl_image", "goxrpl:latest")
     test_suite = args.get("test_suite", "all")
 
