@@ -126,11 +126,14 @@ advisory_delete=0
 [node_size]
 tiny
 
+[peers_max]
+21
+
 [ips_fixed]
 {peers}
 
 [peer_private]
-1
+0
 
 [network_id]
 {network_id}
