@@ -174,7 +174,7 @@ def _render_goxrpl_config(index, node_key, peers):
     return """\
 compression = false
 peer_private = 1
-peers_max = 21
+peers_max = 50
 max_transactions = 250
 ips = []
 ips_fixed = [
