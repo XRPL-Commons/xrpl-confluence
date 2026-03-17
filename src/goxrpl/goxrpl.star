@@ -24,14 +24,14 @@ def launch(plan, count, image, network_config):
         configs[name] = ServiceConfig(
             image = image,
             ports = {
-                "peer": PortSpec(number = PEER_PORT, transport_protocol = "TCP"),
+                "peer": PortSpec(number = PEER_PORT, transport_protocol = "TCP", wait = None),
                 "rpc": PortSpec(number = RPC_PORT, transport_protocol = "TCP", application_protocol = "http"),
                 "ws": PortSpec(number = WS_PORT, transport_protocol = "TCP"),
             },
             files = {
                 "/etc/goxrpl": network_config,
             },
-            cmd = ["goxrpl", "server", "start", "--config", "/etc/goxrpl/goxrpl-{}.toml".format(i)],
+            cmd = ["server", "--conf", "/etc/goxrpl/goxrpl-{}.toml".format(i)],
         )
 
     services = plan.add_services(configs)
