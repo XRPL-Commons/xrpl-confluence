@@ -130,7 +130,7 @@ tiny
 {peers}
 
 [peer_private]
-1
+0
 
 [network_id]
 {network_id}
