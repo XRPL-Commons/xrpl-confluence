@@ -58,13 +58,17 @@
   function updateSyncBadge(nodes) {
     const badge = document.getElementById("sync-badge");
     const label = document.getElementById("sync-label");
-    const okNodes = nodes.filter((n) => n.status === "ok" && n.validated_ledger);
+    const okNodes = nodes.filter((n) => n.status === "ok" && (n.validated_ledger || n.closed_ledger || n.ledger_current_index));
     if (okNodes.length === 0) {
       badge.className = "sync-badge pending";
       label.textContent = "Connecting...";
       return;
     }
-    const seqs = okNodes.map((n) => n.validated_ledger.seq);
+    const seqs = okNodes.map((n) => {
+      if (n.validated_ledger) return n.validated_ledger.seq;
+      if (n.closed_ledger) return n.closed_ledger.seq;
+      return n.ledger_current_index;
+    });
     const maxSeq = Math.max(...seqs);
     const minSeq = Math.min(...seqs);
     if (maxSeq - minSeq <= 1) {
@@ -89,9 +93,10 @@
     const card = document.createElement("div");
     card.className = `node-card ${node.type}`;
 
+    const healthyStates = ["full", "proposing", "validating"];
     const statusClass =
       node.status === "ok"
-        ? node.server_state === "full"
+        ? healthyStates.includes(node.server_state)
           ? "ok"
           : "warn"
         : "err";
@@ -102,7 +107,9 @@
           ? "unreachable"
           : node.error || "error";
 
-    const ledgerSeq = node.validated_ledger ? node.validated_ledger.seq : "-";
+    const validatedSeq = node.validated_ledger ? node.validated_ledger.seq : null;
+    const currentSeq = node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null);
+    const ledgerSeq = validatedSeq || currentSeq || "-";
     const ledgerAge = node.validated_ledger ? `${node.validated_ledger.age}s ago` : "-";
     const peers = node.status === "ok" ? node.peers : "-";
     const uptime = node.status === "ok" ? formatUptime(node.uptime) : "-";
@@ -184,7 +191,8 @@
       const node = nodes[i];
       const p = positions[i];
       const cls = node.status !== "ok" ? "unreachable" : node.type;
-      const seq = node.validated_ledger ? `#${node.validated_ledger.seq}` : "";
+      const seqVal = node.validated_ledger ? node.validated_ledger.seq : (node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null));
+      const seq = seqVal ? `#${seqVal}` : "";
       const shortName = node.name.replace("rippled-", "R").replace("goxrpl-", "G");
       html += `<g class="topo-node">`;
       html += `<circle class="topo-node-circle ${cls}" cx="${p.x}" cy="${p.y}" r="24"/>`;
@@ -208,18 +216,21 @@
 
     const now = new Date();
     for (const node of nodes) {
-      if (node.status !== "ok" || !node.validated_ledger) continue;
-      const seq = node.validated_ledger.seq;
+      if (node.status !== "ok") continue;
+      const seq = node.validated_ledger ? node.validated_ledger.seq
+        : (node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null));
+      if (!seq) continue;
       const prev = prevLedgerSeqs[node.name];
       if (prev !== seq) {
         prevLedgerSeqs[node.name] = seq;
         if (prev !== undefined) {
+          const hash = node.validated_ledger ? (node.validated_ledger.hash || "") : "";
           timelineEntries.unshift({
             time: now,
             name: node.name,
             type: node.type,
             seq: seq,
-            hash: node.validated_ledger.hash || "",
+            hash: hash,
           });
         }
       }
@@ -261,9 +272,10 @@
 
   // Consensus metrics
   function updateConsensus(nodes) {
-    const okNodes = nodes.filter((n) => n.status === "ok" && n.validated_ledger);
+    const okNodes = nodes.filter((n) => n.status === "ok");
+    const nodesWithLedger = okNodes.filter((n) => n.validated_ledger || n.closed_ledger || n.ledger_current_index);
     const totalNodes = nodes.length;
-    const onlineNodes = nodes.filter((n) => n.status === "ok").length;
+    const onlineNodes = okNodes.length;
 
     document.getElementById("metric-online").textContent = `${onlineNodes}/${totalNodes}`;
     document.getElementById("metric-validators").textContent =
@@ -271,7 +283,11 @@
         ? okNodes[0].last_close.proposers || "-"
         : "-";
 
-    const seqs = okNodes.map((n) => n.validated_ledger.seq);
+    const seqs = nodesWithLedger.map((n) => {
+      if (n.validated_ledger) return n.validated_ledger.seq;
+      if (n.closed_ledger) return n.closed_ledger.seq;
+      return n.ledger_current_index;
+    });
     document.getElementById("metric-ledger").textContent =
       seqs.length > 0 ? Math.max(...seqs) : "-";
 

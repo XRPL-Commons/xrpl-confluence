@@ -89,6 +89,8 @@ async function pollNode(node) {
       peers: info.peers,
       complete_ledgers: info.complete_ledgers,
       validated_ledger: info.validated_ledger || null,
+      closed_ledger: info.closed_ledger || null,
+      ledger_current_index: info.ledger_current_index || null,
       last_close: info.last_close || null,
       network_id: info.network_id,
       pubkey_node: info.pubkey_node,
