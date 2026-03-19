@@ -4,24 +4,124 @@
   const MAX_TIMELINE = 80;
   let prevLedgerSeqs = {};
   let timelineEntries = [];
+  let selectedNode = null;
+  let logPollInterval = null;
 
   // Inline SVG logos
   const LOGO_CPP = `<svg viewBox="0 0 32 32" class="node-logo"><rect x="2" y="4" width="28" height="24" rx="4" fill="#659AD2"/><rect x="2" y="4" width="28" height="12" rx="4" fill="#00599C"/><rect x="2" y="12" width="28" height="4" fill="#00599C"/><text x="16" y="20" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="#fff">C++</text></svg>`;
-  const LOGO_GO = `<svg viewBox="0 0 32 32" class="node-logo"><circle cx="16" cy="16" r="14" fill="#00ADD8"/><circle cx="11" cy="13" r="3" fill="#fff"/><circle cx="21" cy="13" r="3" fill="#fff"/><circle cx="11" cy="13" r="1.5" fill="#000"/><circle cx="21" cy="13" r="1.5" fill="#000"/><path d="M10 21 Q16 25 22 21" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/><rect x="12" y="3" rx="1" width="3" height="5" fill="#00ADD8" transform="rotate(-15 13.5 5.5)"/><rect x="17" y="3" rx="1" width="3" height="5" fill="#00ADD8" transform="rotate(15 18.5 5.5)"/></svg>`;
+  const LOGO_GO = `<img src="/gopher.svg" class="node-logo" alt="Go">`;
 
   function logoFor(type) {
     return type === "rippled" ? LOGO_CPP : LOGO_GO;
   }
 
-  // Small logo for topology nodes (returns SVG content to embed inside the main SVG)
   function topoLogoFor(type, cx, cy) {
     if (type === "rippled") {
       return `<g transform="translate(${cx - 10}, ${cy - 8})"><rect x="0" y="1" width="20" height="15" rx="3" fill="#00599C"/><text x="10" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="8" fill="#fff">C++</text></g>`;
     }
-    return `<g transform="translate(${cx - 9}, ${cy - 9})"><circle cx="9" cy="9" r="9" fill="#00ADD8"/><circle cx="6.5" cy="7.5" r="1.8" fill="#fff"/><circle cx="11.5" cy="7.5" r="1.8" fill="#fff"/><circle cx="6.5" cy="7.5" r="0.9" fill="#000"/><circle cx="11.5" cy="7.5" r="0.9" fill="#000"/><path d="M5.5 12.5 Q9 15 12.5 12.5" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/></g>`;
+    return `<image href="/gopher.svg" x="${cx - 14}" y="${cy - 16}" width="28" height="32"/>`;
   }
 
-  // SSE connection
+  // ── Node selection & log panel ──
+
+  function selectNode(name) {
+    selectedNode = name;
+    const panel = document.getElementById("log-panel");
+    panel.classList.add("open");
+    document.getElementById("log-panel-title").textContent = name;
+    fetchLogs(name);
+
+    // Highlight selected card
+    document.querySelectorAll(".node-card").forEach((c) => {
+      c.classList.toggle("selected", c.dataset.name === name);
+    });
+
+    // Start polling logs for selected node
+    if (logPollInterval) clearInterval(logPollInterval);
+    logPollInterval = setInterval(() => fetchLogs(name), 2000);
+  }
+
+  function deselectNode() {
+    selectedNode = null;
+    const panel = document.getElementById("log-panel");
+    panel.classList.remove("open");
+    document.querySelectorAll(".node-card").forEach((c) => c.classList.remove("selected"));
+    if (logPollInterval) {
+      clearInterval(logPollInterval);
+      logPollInterval = null;
+    }
+  }
+
+  async function fetchLogs(name) {
+    try {
+      const res = await fetch(`/api/logs/${encodeURIComponent(name)}`);
+      const data = await res.json();
+      renderLogPanel(data);
+    } catch {
+      document.getElementById("log-panel-logs").innerHTML =
+        '<div class="log-empty">Failed to fetch logs.</div>';
+    }
+  }
+
+  function renderLogPanel(data) {
+    const stateEl = document.getElementById("log-panel-state");
+    const logsEl = document.getElementById("log-panel-logs");
+
+    // Render current state as formatted JSON
+    if (data.state) {
+      const s = data.state;
+      const seq = s.validated_ledger
+        ? `validated #${s.validated_ledger.seq}`
+        : s.closed_ledger
+          ? `closed #${s.closed_ledger.seq}`
+          : s.ledger_current_index
+            ? `current #${s.ledger_current_index}`
+            : "—";
+      const stateClass = s.status === "ok" ? (["proposing", "full", "validating"].includes(s.server_state) ? "ok" : "warn") : "err";
+
+      stateEl.innerHTML = `
+        <div class="log-state-row">
+          <span class="status-dot ${stateClass}"></span>
+          <strong>${s.server_state || s.status}</strong>
+          <span class="log-state-dim">${seq}</span>
+          <span class="log-state-dim">peers: ${s.peers ?? "—"}</span>
+          <span class="log-state-dim">${s.build_version || ""}</span>
+        </div>
+        <div class="log-state-row log-state-dim">
+          complete: ${s.complete_ledgers || "—"}
+          ${s.last_close ? `| proposers: ${s.last_close.proposers} | converge: ${s.last_close.converge_time_s}s` : ""}
+        </div>
+      `;
+    } else {
+      stateEl.innerHTML = '<span class="log-state-dim">No state available</span>';
+    }
+
+    // Render log entries (newest first)
+    if (!data.logs || data.logs.length === 0) {
+      logsEl.innerHTML = '<div class="log-empty">No log entries yet.</div>';
+      return;
+    }
+
+    const entries = data.logs.slice().reverse();
+    logsEl.innerHTML = entries
+      .map((e) => {
+        const time = e.ts.split("T")[1]?.split(".")[0] || e.ts;
+        const levelClass =
+          e.level === "unreachable" || e.level === "error"
+            ? "log-err"
+            : e.level === "proposing" || e.level === "validating"
+              ? "log-ok"
+              : "log-info";
+        return `<div class="log-line ${levelClass}"><span class="log-ts">${time}</span><span class="log-level">${e.level}</span><span class="log-msg">${e.message}</span></div>`;
+      })
+      .join("");
+
+    // Auto-scroll to top (newest)
+    logsEl.scrollTop = 0;
+  }
+
+  // ── SSE & polling ──
+
   function connectSSE() {
     const es = new EventSource("/events");
     es.onmessage = (e) => {
@@ -36,7 +136,6 @@
     };
   }
 
-  // Fallback polling if SSE fails
   async function poll() {
     try {
       const res = await fetch("/api/nodes");
@@ -54,7 +153,8 @@
     updateConsensus(nodes);
   }
 
-  // Sync badge
+  // ── Sync badge ──
+
   function updateSyncBadge(nodes) {
     const badge = document.getElementById("sync-badge");
     const label = document.getElementById("sync-label");
@@ -80,7 +180,8 @@
     }
   }
 
-  // Node cards
+  // ── Node cards ──
+
   function updateNodeCards(nodes) {
     const grid = document.getElementById("node-grid");
     grid.innerHTML = "";
@@ -92,6 +193,10 @@
   function createNodeCard(node) {
     const card = document.createElement("div");
     card.className = `node-card ${node.type}`;
+    if (selectedNode === node.name) card.classList.add("selected");
+    card.dataset.name = node.name;
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => selectNode(node.name));
 
     const healthyStates = ["full", "proposing", "validating"];
     const statusClass =
@@ -159,7 +264,8 @@
     return `${h}h ${m}m`;
   }
 
-  // Topology
+  // ── Topology ──
+
   function updateTopology(nodes) {
     const svg = document.getElementById("topology-svg");
     if (!svg || nodes.length === 0) return;
@@ -169,7 +275,6 @@
     const R = Math.min(W, H) / 2 - 50;
     const n = nodes.length;
 
-    // Position nodes in a circle
     const positions = nodes.map((_, i) => {
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
       return { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
@@ -177,7 +282,7 @@
 
     let html = "";
 
-    // Draw links (all-to-all mesh)
+    // Links
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const active =
@@ -186,16 +291,17 @@
       }
     }
 
-    // Draw nodes
+    // Nodes (clickable)
     for (let i = 0; i < n; i++) {
       const node = nodes[i];
       const p = positions[i];
       const cls = node.status !== "ok" ? "unreachable" : node.type;
+      const isSelected = selectedNode === node.name;
       const seqVal = node.validated_ledger ? node.validated_ledger.seq : (node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null));
       const seq = seqVal ? `#${seqVal}` : "";
       const shortName = node.name.replace("rippled-", "R").replace("goxrpl-", "G");
-      html += `<g class="topo-node">`;
-      html += `<circle class="topo-node-circle ${cls}" cx="${p.x}" cy="${p.y}" r="24"/>`;
+      html += `<g class="topo-node clickable" data-name="${node.name}">`;
+      html += `<circle class="topo-node-circle ${cls}${isSelected ? " selected" : ""}" cx="${p.x}" cy="${p.y}" r="24"/>`;
       if (node.status === "ok") {
         html += topoLogoFor(node.type, p.x, p.y);
       } else {
@@ -207,9 +313,18 @@
     }
 
     svg.innerHTML = html;
+
+    // Attach click handlers to topology nodes
+    svg.querySelectorAll(".topo-node.clickable").forEach((g) => {
+      g.addEventListener("click", () => {
+        const name = g.dataset.name;
+        if (name) selectNode(name);
+      });
+    });
   }
 
-  // Timeline
+  // ── Timeline ──
+
   function updateTimeline(nodes) {
     const container = document.getElementById("timeline-list");
     if (!container) return;
@@ -270,7 +385,8 @@
     });
   }
 
-  // Consensus metrics
+  // ── Consensus metrics ──
+
   function updateConsensus(nodes) {
     const okNodes = nodes.filter((n) => n.status === "ok");
     const nodesWithLedger = okNodes.filter((n) => n.validated_ledger || n.closed_ledger || n.ledger_current_index);
@@ -300,9 +416,13 @@
         : "-";
   }
 
-  // Init
+  // ── Init ──
+
   document.addEventListener("DOMContentLoaded", () => {
     connectSSE();
-    setInterval(poll, 5000); // fallback polling
+    setInterval(poll, 5000);
+
+    // Close button for log panel
+    document.getElementById("log-panel-close").addEventListener("click", deselectNode);
   });
 })();

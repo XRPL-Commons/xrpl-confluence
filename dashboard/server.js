@@ -16,6 +16,9 @@ const MIME = {
 
 let config = { nodes: [], poll_interval_ms: 2000 };
 let nodeStates = {};
+// Rolling log of raw server_info responses per node (last 100 entries).
+let nodeLogs = {};
+const MAX_LOG_ENTRIES = 100;
 let sseClients = [];
 
 function loadConfig() {
@@ -24,6 +27,9 @@ function loadConfig() {
     console.log(
       `Loaded config: ${config.nodes.length} nodes, poll every ${config.poll_interval_ms}ms`
     );
+    for (const n of config.nodes) {
+      nodeLogs[n.name] = [];
+    }
   } catch (e) {
     console.error("Failed to load config:", e.message);
   }
@@ -67,6 +73,7 @@ function rpcCall(rpcUrl, method) {
 }
 
 async function pollNode(node) {
+  const ts = new Date().toISOString();
   try {
     const resp = await rpcCall(node.rpc, "server_info");
     const info = resp.result && resp.result.info;
@@ -77,6 +84,7 @@ async function pollNode(node) {
         status: "error",
         error: "No info in response",
       };
+      pushLog(node.name, ts, "error", "No info in response");
       return;
     }
     nodeStates[node.name] = {
@@ -95,6 +103,17 @@ async function pollNode(node) {
       network_id: info.network_id,
       pubkey_node: info.pubkey_node,
     };
+    // Build a concise log line from the state.
+    const seq = info.validated_ledger
+      ? `validated=#${info.validated_ledger.seq}`
+      : info.closed_ledger
+        ? `closed=#${info.closed_ledger.seq}`
+        : info.ledger_current_index
+          ? `current=#${info.ledger_current_index}`
+          : "no-ledger";
+    const proposers = info.last_close ? `proposers=${info.last_close.proposers}` : "";
+    const converge = info.last_close ? `converge=${info.last_close.converge_time_s}s` : "";
+    pushLog(node.name, ts, info.server_state, `${seq} peers=${info.peers} ${proposers} ${converge}`.trim());
   } catch (e) {
     nodeStates[node.name] = {
       name: node.name,
@@ -102,6 +121,15 @@ async function pollNode(node) {
       status: "unreachable",
       error: e.message,
     };
+    pushLog(node.name, ts, "unreachable", e.message);
+  }
+}
+
+function pushLog(name, ts, level, message) {
+  if (!nodeLogs[name]) nodeLogs[name] = [];
+  nodeLogs[name].push({ ts, level, message });
+  if (nodeLogs[name].length > MAX_LOG_ENTRIES) {
+    nodeLogs[name] = nodeLogs[name].slice(-MAX_LOG_ENTRIES);
   }
 }
 
@@ -145,6 +173,22 @@ const server = http.createServer((req, res) => {
         ),
       })
     );
+    return;
+  }
+
+  // Logs endpoint: GET /api/logs/<node-name>
+  const logMatch = req.url.match(/^\/api\/logs\/(.+)$/);
+  if (logMatch) {
+    const name = decodeURIComponent(logMatch[1]);
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(JSON.stringify({
+      name,
+      state: nodeStates[name] || null,
+      logs: nodeLogs[name] || [],
+    }));
     return;
   }
 
