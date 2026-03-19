@@ -200,6 +200,7 @@ prefetch_workers = 0
 network_id = {network_id}
 ledger_replay = 0
 ssl_verify = 0
+genesis_amendments_disabled = true
 
 database_path = "/tmp/goxrpl/db"
 debug_logfile = "/tmp/goxrpl/db/debug.log"
