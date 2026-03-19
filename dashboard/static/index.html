@@ -42,7 +42,7 @@
     </div>
 
     <!-- Node cards -->
-    <div class="section-title">Nodes</div>
+    <div class="section-title">Nodes <span class="hint">(click to inspect)</span></div>
     <div class="node-grid" id="node-grid">
       <div class="loading">
         <div class="loading-spinner"></div>
@@ -50,11 +50,23 @@
       </div>
     </div>
 
-    <!-- Topology -->
+    <!-- Topology + Log panel side by side -->
     <div class="topology-section">
       <div class="section-title">Network Topology</div>
-      <div class="topology-container">
-        <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 340"></svg>
+      <div class="topology-row">
+        <div class="topology-container">
+          <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 340"></svg>
+        </div>
+        <div class="log-panel" id="log-panel">
+          <div class="log-panel-header">
+            <span class="log-panel-title" id="log-panel-title">Select a node</span>
+            <button class="log-panel-close" id="log-panel-close" title="Close">&times;</button>
+          </div>
+          <div class="log-panel-state" id="log-panel-state"></div>
+          <div class="log-panel-logs" id="log-panel-logs">
+            <div class="log-empty">Click a node card or topology node to view its logs.</div>
+          </div>
+        </div>
       </div>
     </div>
 

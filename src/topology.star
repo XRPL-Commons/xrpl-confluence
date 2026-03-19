@@ -205,7 +205,7 @@ database_path = "/tmp/goxrpl/db"
 debug_logfile = "/tmp/goxrpl/db/debug.log"
 
 node_size = "tiny"
-signing_support = false
+signing_support = true
 beta_rpc_api = 0
 
 validation_seed = "{seed}"
