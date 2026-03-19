@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XRPL Confluence</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <div class="logo">
+        <h1>XRPL Confluence</h1>
+        <span class="subtitle">Interop Network Monitor</span>
+      </div>
+      <div id="sync-badge" class="sync-badge pending">
+        <span class="sync-dot"></span>
+        <span id="sync-label">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- Consensus metrics -->
+    <div class="section-title">Network Overview</div>
+    <div class="consensus-grid">
+      <div class="consensus-card">
+        <div class="consensus-value" id="metric-online">-</div>
+        <div class="consensus-label">Nodes Online</div>
+      </div>
+      <div class="consensus-card">
+        <div class="consensus-value" id="metric-ledger">-</div>
+        <div class="consensus-label">Latest Ledger</div>
+      </div>
+      <div class="consensus-card">
+        <div class="consensus-value" id="metric-validators">-</div>
+        <div class="consensus-label">Proposers</div>
+      </div>
+      <div class="consensus-card">
+        <div class="consensus-value" id="metric-converge">-</div>
+        <div class="consensus-label">Converge Time</div>
+      </div>
+    </div>
+
+    <!-- Node cards -->
+    <div class="section-title">Nodes</div>
+    <div class="node-grid" id="node-grid">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        Connecting to nodes...
+      </div>
+    </div>
+
+    <!-- Topology -->
+    <div class="topology-section">
+      <div class="section-title">Network Topology</div>
+      <div class="topology-container">
+        <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 340"></svg>
+      </div>
+    </div>
+
+    <!-- Ledger timeline -->
+    <div class="timeline-section">
+      <div class="section-title">Ledger Timeline</div>
+      <div class="timeline-container" id="timeline-list">
+        <div class="timeline-empty">Waiting for ledger closes...</div>
+      </div>
+    </div>
+
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

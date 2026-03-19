@@ -9,6 +9,8 @@ rippled = import_module("./src/rippled/rippled.star")
 goxrpl = import_module("./src/goxrpl/goxrpl.star")
 topology = import_module("./src/topology.star")
 tests = import_module("./src/tests/tests.star")
+delayed_sync = import_module("./src/tests/delayed_sync.star")
+dashboard = import_module("./src/dashboard/dashboard.star")
 
 DEFAULT_RIPPLED_COUNT = 3
 DEFAULT_GOXRPL_COUNT = 2
@@ -27,7 +29,7 @@ def run(plan, args = {}):
     """
     rippled_count = args.get("rippled_count", DEFAULT_RIPPLED_COUNT)
     goxrpl_count = args.get("goxrpl_count", DEFAULT_GOXRPL_COUNT)
-    rippled_image = args.get("rippled_image", "rippleci/rippled:latest")
+    rippled_image = args.get("rippled_image", "rippleci/rippled:2.6.2")
     goxrpl_image = args.get("goxrpl_image", "goxrpl:latest")
     test_suite = args.get("test_suite", "all")
 
@@ -39,8 +41,17 @@ def run(plan, args = {}):
     # Launch rippled nodes
     rippled_nodes = rippled.launch(plan, rippled_count, rippled_image, network_config)
 
+    # Delayed sync test: launch rippled first, wait, then launch goXRPL inside the test
+    if test_suite == "delayed_sync":
+        plan.print("=== Running delayed sync test (goXRPL launches after rippled advances) ===")
+        return delayed_sync.run(plan, rippled_nodes, goxrpl_image, network_config)
+
     # Launch goXRPL nodes
     goxrpl_nodes = goxrpl.launch(plan, goxrpl_count, goxrpl_image, network_config)
+
+    # Launch monitoring dashboard
+    dashboard_files = plan.upload_files(src = "./dashboard", name = "dashboard-files")
+    dashboard.launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files)
 
     # Run interop test suite
     all_nodes = rippled_nodes + goxrpl_nodes
