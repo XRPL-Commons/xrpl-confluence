@@ -27,9 +27,9 @@ def run(plan, nodes):
     results = {}
 
     # Wait for the network to be live before submitting anything.
-    plan.print("Waiting for network to be live (all nodes validated_seq >= 3)...")
+    plan.print("Waiting for network to be live (all nodes closed_seq >= 3)...")
     for node in nodes:
-        helpers.wait_for_validated_seq(plan, node, 3, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
     plan.print("Network is live.")
 
     # Test 1: rippled -> goXRPL propagation
@@ -77,7 +77,7 @@ def _test_rippled_to_goxrpl(plan, rippled_nodes, goxrpl_nodes):
 
     # Wait for a few ledger closes so the tx gets validated.
     plan.print("  Waiting for tx to be validated on " + target["name"] + "...")
-    helpers.wait_for_validated_seq(plan, target, 6, timeout = "60s")
+    helpers.wait_for_ledger_seq(plan, target, 6, timeout = "60s")
 
     # Verify the destination account exists on the goXRPL node.
     plan.print("  Checking destination account on " + target["name"])
@@ -124,7 +124,7 @@ def _test_goxrpl_to_rippled(plan, rippled_nodes, goxrpl_nodes):
 
     # Wait for a few ledger closes so the tx gets validated.
     plan.print("  Waiting for tx to be validated on " + target["name"] + "...")
-    helpers.wait_for_validated_seq(plan, target, 8, timeout = "60s")
+    helpers.wait_for_ledger_seq(plan, target, 8, timeout = "60s")
 
     # Verify the destination account exists on the rippled node.
     plan.print("  Checking destination account on " + target["name"])

@@ -12,8 +12,8 @@ tests = import_module("./src/tests/tests.star")
 delayed_sync = import_module("./src/tests/delayed_sync.star")
 dashboard = import_module("./src/dashboard/dashboard.star")
 
-DEFAULT_RIPPLED_COUNT = 3
-DEFAULT_GOXRPL_COUNT = 2
+DEFAULT_RIPPLED_COUNT = 4
+DEFAULT_GOXRPL_COUNT = 1
 
 def run(plan, args = {}):
     """Spin up a mixed XRPL network and run interop tests.

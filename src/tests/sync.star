@@ -57,9 +57,9 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     reference_node = nodes[0]
 
     # --- Phase 1: Let the network advance and create some state ---
-    plan.print("  Waiting for network to reach validated_seq >= 5...")
+    plan.print("  Waiting for network to reach closed_seq >= 5...")
     for node in nodes:
-        helpers.wait_for_validated_seq(plan, node, 5, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, 5, timeout = "120s")
 
     # Submit a Payment to create ledger state beyond empty genesis.
     plan.print("  Submitting Payment to create state...")
@@ -77,9 +77,9 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     )
 
     # Wait for the tx to be committed.
-    plan.print("  Waiting for state to be committed (validated_seq >= 10)...")
+    plan.print("  Waiting for state to be committed (closed_seq >= 10)...")
     for node in nodes:
-        helpers.wait_for_validated_seq(plan, node, 10, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, 10, timeout = "120s")
 
     # --- Phase 2: Launch a fresh goXRPL node ---
     plan.print("  Launching fresh goXRPL node...")
@@ -88,10 +88,10 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
 
     # --- Phase 3: Wait for the new node to sync ---
     plan.print("  Waiting for " + new_node["name"] + " to sync (closed_seq >= 3)...")
-    helpers.wait_for_closed_seq(plan, new_node, 3, timeout = "60s")
+    helpers.wait_for_ledger_seq(plan, new_node, 3, timeout = "60s")
 
-    plan.print("  Waiting for " + new_node["name"] + " to reach validated_seq >= 8...")
-    helpers.wait_for_validated_seq(plan, new_node, 8, timeout = "120s")
+    plan.print("  Waiting for " + new_node["name"] + " to reach closed_seq >= 8...")
+    helpers.wait_for_ledger_seq(plan, new_node, 8, timeout = "120s")
 
     # --- Phase 4: Verify state consistency ---
     plan.print("  Comparing ledger hashes between existing and new node...")

@@ -2,19 +2,31 @@
 
 Provides reusable PostHttpRequestRecipe builders and common wait patterns
 to eliminate boilerplate across test files.
+
+Note: goXRPL nodes currently operate in "full" mode (syncing) rather than
+"proposing" mode, so `validated_ledger` may not exist in server_info.
+All wait functions use `closed_ledger.seq` which is always present.
+For hash comparison, we use the `ledger` RPC with a specific index which
+works regardless of validation state.
 """
 
 # Well-known genesis account for private XRPL test networks (masterpassphrase).
 GENESIS_ADDRESS = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
 GENESIS_SECRET = "snoPBrXtMeMyMHUVTgbuqAfg1SUTb"
 
-# Fixed test destination addresses (derived from known seeds for reproducibility).
-TEST_DEST_1 = "rPMh7Pi9ct699iZUTWzJaUQx7cAS7KVpAt"
-TEST_DEST_2 = "r3kmLJN5D28dHuH8vZNUZpMC43pEHpaocV"
+# Fixed test destination addresses (generated with valid checksums via goXRPL crypto).
+TEST_DEST_1 = "ra8sezk7XT7JRgE1myhUBZJUDCUH3qrWMU"
+TEST_DEST_2 = "rDimGkRfnAufCwoKbrAXSYDCcjgth548s2"
 
 
 def server_info_recipe():
-    """Build a PostHttpRequestRecipe for server_info."""
+    """Build a PostHttpRequestRecipe for server_info.
+
+    Only extracts fields that are guaranteed to be present in all node states.
+    Note: closed_ledger and validated_ledger are mutually exclusive in rippled
+    (depends on whether quorum is met), so neither is extracted here.
+    The full response body is logged by plan.request() regardless.
+    """
     return PostHttpRequestRecipe(
         port_id = "rpc",
         endpoint = "/",
@@ -22,8 +34,6 @@ def server_info_recipe():
         body = '{"method": "server_info", "params": [{}]}',
         extract = {
             "server_state": ".result.info.server_state",
-            "validated_seq": ".result.info.validated_ledger.seq",
-            "closed_seq": ".result.info.closed_ledger.seq",
             "peers": ".result.info.peers",
         },
     )
@@ -107,13 +117,18 @@ def submit_payment_recipe(secret, account, destination, amount):
     )
 
 
-def wait_for_validated_seq(plan, node, min_seq, timeout = "120s"):
-    """Wait until a node's validated ledger sequence reaches min_seq.
+def wait_for_ledger_seq(plan, node, min_seq, timeout = "120s"):
+    """Wait until a node's current ledger index reaches min_seq.
+
+    Uses the ledger_current RPC which returns ledger_current_index — a field
+    that is always present regardless of whether the network has reached
+    validation quorum (server_info's closed_ledger and validated_ledger fields
+    are mutually exclusive depending on node state).
 
     Args:
         plan: Kurtosis plan object.
         node: Node descriptor dict with "name" key.
-        min_seq: Minimum validated ledger sequence to wait for.
+        min_seq: Minimum ledger sequence to wait for.
         timeout: Timeout string (default "120s").
     """
     plan.wait(
@@ -122,36 +137,8 @@ def wait_for_validated_seq(plan, node, min_seq, timeout = "120s"):
             port_id = "rpc",
             endpoint = "/",
             content_type = "application/json",
-            body = '{"method": "server_info", "params": [{}]}',
-            extract = {"seq": ".result.info.validated_ledger.seq"},
-        ),
-        field = "extract.seq",
-        assertion = ">=",
-        target_value = min_seq,
-        timeout = timeout,
-    )
-
-
-def wait_for_closed_seq(plan, node, min_seq, timeout = "120s"):
-    """Wait until a node's closed ledger sequence reaches min_seq.
-
-    Uses closed_ledger.seq which is available before validated_ledger.
-    Useful for liveness checks during early node startup.
-
-    Args:
-        plan: Kurtosis plan object.
-        node: Node descriptor dict with "name" key.
-        min_seq: Minimum closed ledger sequence to wait for.
-        timeout: Timeout string (default "120s").
-    """
-    plan.wait(
-        service_name = node["name"],
-        recipe = PostHttpRequestRecipe(
-            port_id = "rpc",
-            endpoint = "/",
-            content_type = "application/json",
-            body = '{"method": "server_info", "params": [{}]}',
-            extract = {"seq": ".result.info.closed_ledger.seq"},
+            body = '{"method": "ledger_current", "params": [{}]}',
+            extract = {"seq": ".result.ledger_current_index"},
         ),
         field = "extract.seq",
         assertion = ">=",

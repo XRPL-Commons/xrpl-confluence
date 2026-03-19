@@ -56,9 +56,9 @@ def run_soak(plan, nodes, trafficgen_image = "trafficgen:latest", tx_count = 100
     results = {}
 
     # Wait for the network to be live first.
-    plan.print("Waiting for all nodes to reach validated_seq >= 3...")
+    plan.print("Waiting for all nodes to reach closed_seq >= 3...")
     for node in nodes:
-        helpers.wait_for_validated_seq(plan, node, 3, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
 
     # Find a rippled node to use as the submit target (more reliable for signing).
     rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
@@ -119,13 +119,13 @@ def _test_mixed_consensus(plan, nodes):
     Returns:
         Test result string.
     """
-    plan.print("  Waiting for all nodes to reach validated_ledger.seq >= 5...")
+    plan.print("  Waiting for all nodes to reach closed_ledger.seq >= 5...")
 
     for node in nodes:
         plan.print("    Waiting for " + node["name"] + " (" + node["type"] + ")")
-        helpers.wait_for_validated_seq(plan, node, 5, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, 5, timeout = "120s")
 
-    plan.print("  All nodes reached validated_ledger.seq >= 5")
+    plan.print("  All nodes reached closed_ledger.seq >= 5")
 
     # Query final state for reporting
     helpers.query_all_server_info(plan, nodes)
@@ -150,10 +150,10 @@ def _test_ledger_hash_agreement(plan, nodes):
     target_seq = 10
     compare_seq = 5
 
-    plan.print("  Waiting for all nodes to reach validated_ledger.seq >= {}...".format(target_seq))
+    plan.print("  Waiting for all nodes to reach closed_ledger.seq >= {}...".format(target_seq))
 
     for node in nodes:
-        helpers.wait_for_validated_seq(plan, node, target_seq, timeout = "120s")
+        helpers.wait_for_ledger_seq(plan, node, target_seq, timeout = "120s")
 
     plan.print("  All nodes reached seq >= {}. Comparing hashes for seq {}...".format(target_seq, compare_seq))
 
