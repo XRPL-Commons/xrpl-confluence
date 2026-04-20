@@ -94,15 +94,14 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     helpers.wait_for_ledger_seq(plan, new_node, 15, timeout = "120s")
 
     # --- Phase 4: Verify state consistency ---
-    # Query a seq that BOTH nodes have. A late-joining node acquires the
-    # current tip (e.g. seq 10 at join time) rather than walking all the
-    # way back from genesis, so historical seqs are not locally
-    # retrievable. Pick a seq >= the join-time tip: seq 15 is past the
-    # "wait for >= 10" / "wait for >= 15" gates above and well within
-    # any node's recent history.
-    plan.print("  Comparing ledger hashes between existing and new node...")
+    # Use ledger_index="validated" to dodge the race where a hardcoded
+    # seq isn't closed/validated on one of the nodes yet. Both the
+    # reference rippled node and the freshly-synced goXRPL must agree
+    # on the same validated ledger hash — that's the real proof that
+    # goXRPL processed the same history rippled did.
+    plan.print("  Comparing validated ledger between reference and new node...")
     compare_nodes = [reference_node, new_node]
-    helpers.query_ledger_hashes(plan, compare_nodes, 15)
+    helpers.assert_validated_ledgers_match(plan, compare_nodes)
 
     # Verify the new node can serve account data for the funded destination.
     plan.print("  Checking destination account on new node...")
