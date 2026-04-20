@@ -83,20 +83,26 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
 
     # --- Phase 2: Launch a fresh goXRPL node ---
     plan.print("  Launching fresh goXRPL node...")
-    new_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config)
+    new_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config, name_prefix = "goxrpl-late")
     new_node = new_nodes[0]
 
     # --- Phase 3: Wait for the new node to sync ---
     plan.print("  Waiting for " + new_node["name"] + " to sync (closed_seq >= 3)...")
     helpers.wait_for_ledger_seq(plan, new_node, 3, timeout = "60s")
 
-    plan.print("  Waiting for " + new_node["name"] + " to reach closed_seq >= 8...")
-    helpers.wait_for_ledger_seq(plan, new_node, 8, timeout = "120s")
+    plan.print("  Waiting for " + new_node["name"] + " to reach closed_seq >= 15...")
+    helpers.wait_for_ledger_seq(plan, new_node, 15, timeout = "120s")
 
     # --- Phase 4: Verify state consistency ---
+    # Query a seq that BOTH nodes have. A late-joining node acquires the
+    # current tip (e.g. seq 10 at join time) rather than walking all the
+    # way back from genesis, so historical seqs are not locally
+    # retrievable. Pick a seq >= the join-time tip: seq 15 is past the
+    # "wait for >= 10" / "wait for >= 15" gates above and well within
+    # any node's recent history.
     plan.print("  Comparing ledger hashes between existing and new node...")
     compare_nodes = [reference_node, new_node]
-    helpers.query_ledger_hashes(plan, compare_nodes, 5)
+    helpers.query_ledger_hashes(plan, compare_nodes, 15)
 
     # Verify the new node can serve account data for the funded destination.
     plan.print("  Checking destination account on new node...")
