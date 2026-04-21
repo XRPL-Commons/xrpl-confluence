@@ -2,7 +2,12 @@
   "use strict";
 
   const MAX_TIMELINE = 80;
-  let prevLedgerSeqs = {};
+  // Track validated and closed seqs separately. Mixing them in a single
+  // map causes seq to appear to regress (e.g. closed=6 logged, then a
+  // genuine validated=4 arrives with its hash — looks like "6 → 4"
+  // when really the 6 never had quorum behind it.)
+  let prevValidatedSeqs = {};
+  let prevClosedSeqs = {};
   let timelineEntries = [];
   let selectedNode = null;
   let logPollInterval = null;
@@ -332,21 +337,45 @@
     const now = new Date();
     for (const node of nodes) {
       if (node.status !== "ok") continue;
-      const seq = node.validated_ledger ? node.validated_ledger.seq
-        : (node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null));
-      if (!seq) continue;
-      const prev = prevLedgerSeqs[node.name];
-      if (prev !== seq) {
-        prevLedgerSeqs[node.name] = seq;
-        if (prev !== undefined) {
-          const hash = node.validated_ledger ? (node.validated_ledger.hash || "") : "";
-          timelineEntries.unshift({
-            time: now,
-            name: node.name,
-            type: node.type,
-            seq: seq,
-            hash: hash,
-          });
+
+      // Validated seq advances become "Validated ledger #N" entries.
+      if (node.validated_ledger && node.validated_ledger.seq) {
+        const vseq = node.validated_ledger.seq;
+        const prev = prevValidatedSeqs[node.name];
+        if (prev !== vseq) {
+          prevValidatedSeqs[node.name] = vseq;
+          if (prev !== undefined) {
+            timelineEntries.unshift({
+              time: now,
+              name: node.name,
+              type: node.type,
+              seq: vseq,
+              hash: node.validated_ledger.hash || "",
+              kind: "validated",
+            });
+          }
+        }
+      }
+
+      // Closed seq advances — only log while we don't have a validated
+      // ledger yet, so the pre-quorum ramp-up is visible without
+      // conflating with the real "validated" events. Once the node has
+      // a validated_ledger, subsequent closed advances are redundant.
+      if (!node.validated_ledger && node.closed_ledger && node.closed_ledger.seq) {
+        const cseq = node.closed_ledger.seq;
+        const prev = prevClosedSeqs[node.name];
+        if (prev !== cseq) {
+          prevClosedSeqs[node.name] = cseq;
+          if (prev !== undefined) {
+            timelineEntries.unshift({
+              time: now,
+              name: node.name,
+              type: node.type,
+              seq: cseq,
+              hash: "",
+              kind: "closed",
+            });
+          }
         }
       }
     }
@@ -362,17 +391,18 @@
     }
 
     container.innerHTML = timelineEntries
-      .map(
-        (e) => `
+      .map((e) => {
+        const verb = e.kind === "closed" ? "Closed" : "Validated";
+        return `
       <div class="timeline-entry">
         <span class="timeline-time">${formatTime(e.time)}</span>
         <span class="timeline-node ${e.type}">${e.name}</span>
         <span class="timeline-event">
-          Validated ledger <span class="seq">#${e.seq}</span>
+          ${verb} ledger <span class="seq">#${e.seq}</span>
           <span class="hash">${e.hash ? e.hash.slice(0, 12) + "..." : ""}</span>
         </span>
-      </div>`
-      )
+      </div>`;
+      })
       .join("");
   }
 
