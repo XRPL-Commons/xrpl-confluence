@@ -5,8 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,10 +23,21 @@ type capturedCall struct {
 func newCaptureServer(results string) (*httptest.Server, *sync.Mutex, *[]capturedCall) {
 	var mu sync.Mutex
 	calls := []capturedCall{}
+	var seq int64 = 100
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]any
 		_ = json.Unmarshal(body, &req)
+
+		method, _ := req["method"].(string)
+		if method == "server_info" {
+			mu.Lock()
+			seq += 10 // advance by a lot per call so waitForValidation returns quickly
+			cur := seq
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"result":{"info":{"server_state":"full","peers":1,"validated_ledger":{"seq":` + strconv.FormatInt(cur, 10) + `,"hash":"AAA"}}}}`))
+			return
+		}
 
 		call := capturedCall{}
 		if params, ok := req["params"].([]any); ok && len(params) > 0 {
@@ -56,9 +69,9 @@ func TestSetupState_SubmitsMeshAndIOUFunding(t *testing.T) {
 	}
 	client := rpcclient.New(srv.URL)
 
-	orig := SetupLedgerWait
-	SetupLedgerWait = 10 * time.Millisecond
-	defer func() { SetupLedgerWait = orig }()
+	orig := setupPollInterval
+	setupPollInterval = 1 * time.Millisecond
+	defer func() { setupPollInterval = orig }()
 
 	if err := SetupState(client, pool); err != nil {
 		t.Fatalf("SetupState: %v", err)
@@ -103,9 +116,10 @@ func TestSetupState_FailsOnNonSuccess(t *testing.T) {
 
 	pool, _ := NewPool(0xabc, 3)
 	client := rpcclient.New(srv.URL)
-	orig := SetupLedgerWait
-	SetupLedgerWait = 1 * time.Millisecond
-	defer func() { SetupLedgerWait = orig }()
+
+	orig := setupPollInterval
+	setupPollInterval = 1 * time.Millisecond
+	defer func() { setupPollInterval = orig }()
 
 	if err := SetupState(client, pool); err == nil {
 		t.Fatal("expected error on tecNO_LINE, got nil")
@@ -124,5 +138,57 @@ func TestSetupState_SkipsWhenPoolTooSmall(t *testing.T) {
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("pool of 1 should submit 0 txs, got %d", len(*calls))
+	}
+}
+
+func TestWaitForValidation_ReturnsAfterSeqAdvance(t *testing.T) {
+	var callCount atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		if req["method"] != "server_info" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		n := callCount.Add(1)
+		// Return seq 100 on first 2 calls, 102 on 3rd onwards. Target advance of 2 → return at call 3.
+		seq := 100
+		if n >= 3 {
+			seq = 102
+		}
+		payload := `{"result":{"info":{"server_state":"full","peers":1,"validated_ledger":{"seq":` +
+			strconv.Itoa(seq) + `,"hash":"AAA"}}}}`
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+
+	orig := setupPollInterval
+	setupPollInterval = 5 * time.Millisecond
+	defer func() { setupPollInterval = orig }()
+
+	client := rpcclient.New(srv.URL)
+	if err := waitForValidation(client, 2, 2*time.Second); err != nil {
+		t.Fatalf("waitForValidation: %v", err)
+	}
+	if n := callCount.Load(); n < 3 {
+		t.Fatalf("callCount = %d, expected at least 3 polls", n)
+	}
+}
+
+func TestWaitForValidation_TimesOut(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":{"info":{"server_state":"full","peers":1,"validated_ledger":{"seq":100,"hash":"AAA"}}}}`))
+	}))
+	defer srv.Close()
+
+	orig := setupPollInterval
+	setupPollInterval = 5 * time.Millisecond
+	defer func() { setupPollInterval = orig }()
+
+	client := rpcclient.New(srv.URL)
+	err := waitForValidation(client, 2, 50*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
 	}
 }

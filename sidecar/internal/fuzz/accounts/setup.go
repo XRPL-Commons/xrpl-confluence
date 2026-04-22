@@ -8,6 +8,10 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
 
+// setupPollInterval is how often waitForValidation polls ServerInfo. Exposed
+// to tests via package var; production runs use the default (750ms).
+var setupPollInterval = 750 * time.Millisecond
+
 // Setup* values govern the dense trust-line mesh seeded before fuzzing.
 // They are package variables (not consts) so tests can shorten SetupLedgerWait.
 var (
@@ -62,7 +66,9 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 			}
 		}
 	}
-	time.Sleep(SetupLedgerWait)
+	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
+		return fmt.Errorf("wait for trustset validation: %w", err)
+	}
 
 	// Phase 2: IOU funding. Issuer wallet[j] sends USD to holder wallet[i].
 	for i := 0; i < n; i++ {
@@ -88,7 +94,9 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 			}
 		}
 	}
-	time.Sleep(SetupLedgerWait)
+	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
+		return fmt.Errorf("wait for iou payment validation: %w", err)
+	}
 	return nil
 }
 
@@ -127,4 +135,26 @@ func isTransientRPCError(err error) bool {
 	return strings.Contains(msg, "noCurrent") ||
 		strings.Contains(msg, "notReady") ||
 		strings.Contains(msg, "tooBusy")
+}
+
+// waitForValidation polls ServerInfo until validated_ledger.seq has advanced
+// by at least `advance` from the first observed value. Returns an error if
+// the timeout elapses first. Used between SetupState's two phases to ensure
+// TrustSets are validated before IOU Payments reference them — a deterministic
+// replacement for fixed time.Sleep(SetupLedgerWait) that adapts to slow nodes.
+func waitForValidation(client *rpcclient.Client, advance int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	startSeq := -1
+	for time.Now().Before(deadline) {
+		info, err := client.ServerInfo()
+		if err == nil {
+			if startSeq < 0 {
+				startSeq = info.Validated.Seq
+			} else if info.Validated.Seq-startSeq >= advance {
+				return nil
+			}
+		}
+		time.Sleep(setupPollInterval)
+	}
+	return fmt.Errorf("timeout waiting for validated seq to advance by %d (start=%d)", advance, startSeq)
 }
