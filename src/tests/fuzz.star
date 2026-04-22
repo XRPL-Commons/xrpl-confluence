@@ -43,17 +43,17 @@ def run(plan, nodes, image = "trafficgen:latest", tx_count = 100, accounts = 10,
         seed = seed,
     )
 
-    plan.print("Waiting for fuzz to submit {} transactions (timeout 600s)...".format(tx_count))
+    plan.print("Waiting for fuzz to complete (timeout 600s)...")
     plan.wait(
         service_name = "fuzz",
         recipe = GetHttpRequestRecipe(
             port_id = "results",
             endpoint = "/status",
-            extract = {"submitted": ".txs_submitted"},
+            extract = {"state": ".state"},
         ),
-        field = "extract.submitted",
-        assertion = ">=",
-        target_value = tx_count,
+        field = "extract.state",
+        assertion = "==",
+        target_value = "completed",
         timeout = "600s",
         interval = "5s",
     )

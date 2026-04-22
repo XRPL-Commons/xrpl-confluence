@@ -124,17 +124,22 @@ type stringErr struct{ s string }
 
 func (e *stringErr) Error() string { return e.s }
 
+type statusResponse struct {
+	State string         `json:"state"`
+	Stats *runners.Stats `json:"stats"`
+}
+
 func serveHTTP(mu *sync.RWMutex, sp **runners.Stats) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
 		defer mu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		if *sp == nil {
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "running"})
-			return
+		resp := statusResponse{State: "running", Stats: *sp}
+		if *sp != nil {
+			resp.State = "completed"
 		}
-		_ = json.NewEncoder(w).Encode(*sp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
