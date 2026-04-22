@@ -25,3 +25,10 @@ func (g *Generator) OfferCreate(r *mathrand.Rand) (*Tx, error) {
 		Secret:          acct.Seed,
 	}, nil
 }
+
+func init() {
+	Register(CandidateTx{
+		TransactionType: "OfferCreate",
+		Build:           func(g *Generator, r anyRand) (*Tx, error) { return g.OfferCreate(r) },
+	})
+}

@@ -25,3 +25,10 @@ func (g *Generator) TrustSet(r *mathrand.Rand) (*Tx, error) {
 		Secret: acct.Seed,
 	}, nil
 }
+
+func init() {
+	Register(CandidateTx{
+		TransactionType: "TrustSet",
+		Build:           func(g *Generator, r anyRand) (*Tx, error) { return g.TrustSet(r) },
+	})
+}

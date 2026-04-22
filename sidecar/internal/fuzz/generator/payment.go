@@ -18,3 +18,10 @@ func (g *Generator) Payment(r *mathrand.Rand) (*Tx, error) {
 		Secret:          from.Seed,
 	}, nil
 }
+
+func init() {
+	Register(CandidateTx{
+		TransactionType: "Payment",
+		Build:           func(g *Generator, r anyRand) (*Tx, error) { return g.Payment(r) },
+	})
+}
