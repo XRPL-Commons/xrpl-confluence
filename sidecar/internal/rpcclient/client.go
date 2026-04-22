@@ -306,6 +306,33 @@ func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
 	}, nil
 }
 
+// TxResult holds the relevant field from a `tx` RPC response.
+type TxResult struct {
+	TransactionResult string `json:"transaction_result"`
+	Validated         bool   `json:"validated"`
+}
+
+// Tx looks up a transaction by hash and returns its result code.
+func (c *Client) Tx(hash string) (*TxResult, error) {
+	raw, err := c.Call("tx", map[string]any{"transaction": hash})
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		Meta struct {
+			TransactionResult string `json:"TransactionResult"`
+		} `json:"meta"`
+		Validated bool `json:"validated"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse tx: %w", err)
+	}
+	return &TxResult{
+		TransactionResult: wrapper.Meta.TransactionResult,
+		Validated:         wrapper.Validated,
+	}, nil
+}
+
 func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 	var result struct {
 		EngineResult        string `json:"engine_result"`
