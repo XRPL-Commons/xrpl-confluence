@@ -56,7 +56,8 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 		TxCount:    5,
 		CorpusDir:  corpusDir,
 		BatchClose: 50 * time.Millisecond,
-		SkipFund:   true, // Tests don't model genesis state; skip the funding phase.
+		SkipFund:  true, // Tests don't model genesis state; skip the funding phase.
+		SkipSetup: true, // Tests don't provide a mesh-capable mock; skip trust-line seeding.
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -28,7 +28,8 @@ type Config struct {
 	TxCount    int
 	CorpusDir  string
 	BatchClose time.Duration
-	SkipFund   bool // unit-test escape hatch
+	SkipFund   bool // escape hatch: skip genesis funding (unit tests)
+	SkipSetup  bool // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
 }
 
 // Stats summarises one run.
@@ -68,6 +69,13 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
+	}
+	if !cfg.SkipSetup {
+		log.Printf("realtime: seeding state mesh (%d accounts) ...", cfg.AccountN)
+		if err := accounts.SetupState(submit, pool); err != nil {
+			return nil, fmt.Errorf("setup state: %w", err)
+		}
+		log.Printf("realtime: state mesh seeded")
 	}
 
 	enabled, err := generator.DiscoverEnabledAmendments(submit)
