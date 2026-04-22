@@ -333,6 +333,24 @@ func (c *Client) Tx(hash string) (*TxResult, error) {
 	}, nil
 }
 
+// SubmitPaymentIOU submits a Payment whose Amount is an IOU (currency+issuer+value)
+// rather than a drops string. Useful for setup paths that need to fund trust lines.
+func (c *Client) SubmitPaymentIOU(secret, account, destination string, amount map[string]any) (*SubmitResult, error) {
+	raw, err := c.Call("submit", map[string]interface{}{
+		"secret": secret,
+		"tx_json": map[string]interface{}{
+			"TransactionType": "Payment",
+			"Account":         account,
+			"Destination":     destination,
+			"Amount":          amount,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseSubmitResult(raw)
+}
+
 func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 	var result struct {
 		EngineResult        string `json:"engine_result"`
