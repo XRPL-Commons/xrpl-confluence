@@ -1,0 +1,146 @@
+// Command fuzz is the xrpl-confluence fuzzer CLI. It reads its configuration
+// from environment variables (same pattern as trafficgen) and runs the
+// realtime runner against the confluence topology.
+//
+// Environment variables:
+//
+//	NODES       — comma-separated node URLs for oracle observation (required)
+//	SUBMIT_URL  — node tx submissions go to (default: first NODES entry)
+//	FUZZ_SEED   — uint64; missing → crypto-random (logged at start)
+//	TX_COUNT    — total tx submissions (default 100)
+//	ACCOUNTS    — account pool size (default 10)
+//	CORPUS_DIR  — divergence output directory (default /output/corpus)
+//	BATCH_CLOSE — duration between layer-1 batch checks (default 5s)
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/runners"
+)
+
+func main() {
+	flag.Parse()
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s",
+		cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir)
+
+	var statsMu sync.RWMutex
+	var currentStats *runners.Stats
+
+	go serveHTTP(&statsMu, &currentStats)
+
+	ctx := context.Background()
+	stats, err := runners.Run(ctx, *cfg)
+	if err != nil {
+		log.Fatalf("run: %v", err)
+	}
+
+	statsMu.Lock()
+	currentStats = stats
+	statsMu.Unlock()
+
+	blob, _ := json.MarshalIndent(stats, "", "  ")
+	log.Printf("fuzz: done\n%s", blob)
+	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
+	select {}
+}
+
+func loadConfig() (*runners.Config, error) {
+	nodes := strings.Split(os.Getenv("NODES"), ",")
+	if len(nodes) < 2 || nodes[0] == "" {
+		return nil, fmtErr("NODES must list >= 2 comma-separated URLs")
+	}
+	for i, n := range nodes {
+		n = strings.TrimSpace(n)
+		if !strings.HasPrefix(n, "http") {
+			n = "http://" + n
+		}
+		nodes[i] = n
+	}
+	submit := os.Getenv("SUBMIT_URL")
+	if submit == "" {
+		submit = nodes[0]
+	} else if !strings.HasPrefix(submit, "http") {
+		submit = "http://" + submit
+	}
+
+	seed := corpus.SeedFromEnv("FUZZ_SEED")
+	txCount := envInt("TX_COUNT", 100)
+	accounts := envInt("ACCOUNTS", 10)
+	corpusDir := envDefault("CORPUS_DIR", "/output/corpus")
+	batchClose := envDuration("BATCH_CLOSE", 5*time.Second)
+
+	return &runners.Config{
+		NodeURLs:   nodes,
+		SubmitURL:  submit,
+		Seed:       seed,
+		AccountN:   accounts,
+		TxCount:    txCount,
+		CorpusDir:  corpusDir,
+		BatchClose: batchClose,
+	}, nil
+}
+
+func envDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+func fmtErr(s string) error { return &stringErr{s} }
+
+type stringErr struct{ s string }
+
+func (e *stringErr) Error() string { return e.s }
+
+func serveHTTP(mu *sync.RWMutex, sp **runners.Stats) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		mu.RLock()
+		defer mu.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		if *sp == nil {
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "running"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(*sp)
+	})
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	log.Println("HTTP results server on :8081")
+	if err := http.ListenAndServe(":8081", mux); err != nil {
+		log.Printf("http: %v", err)
+	}
+}
