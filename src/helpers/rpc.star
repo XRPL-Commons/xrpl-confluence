@@ -43,22 +43,34 @@ def ledger_recipe(ledger_index):
     """Build a PostHttpRequestRecipe for the ledger RPC method.
 
     Args:
-        ledger_index: Integer ledger sequence number.
+        ledger_index: Integer ledger sequence number OR one of the
+            XRPL string selectors "validated", "closed", "current".
+            Passing a string (e.g. "validated") is the most robust
+            choice in tests because it avoids races where a hardcoded
+            seq hasn't been closed/validated on the target node yet.
 
     Returns:
         A PostHttpRequestRecipe that extracts ledger_hash, account_hash, and
         transaction_hash from the response.
     """
+
+    # Quote string selectors like "validated"; leave integer seqs bare.
+    if type(ledger_index) == "string":
+        index_literal = '"{}"'.format(ledger_index)
+    else:
+        index_literal = "{}".format(ledger_index)
+
     return PostHttpRequestRecipe(
         port_id = "rpc",
         endpoint = "/",
         content_type = "application/json",
-        body = '{{"method": "ledger", "params": [{{"ledger_index": {}}}]}}'.format(ledger_index),
+        body = '{{"method": "ledger", "params": [{{"ledger_index": {}}}]}}'.format(index_literal),
         extract = {
             "ledger_hash": ".result.ledger.ledger_hash",
             "account_hash": ".result.ledger.account_hash",
             "transaction_hash": ".result.ledger.transaction_hash",
             "close_time": ".result.ledger.close_time",
+            "ledger_index": ".result.ledger.ledger_index",
         },
     )
 
@@ -206,3 +218,66 @@ def query_ledger_hashes(plan, nodes, seq):
             recipe = ledger_recipe(seq),
         )
     plan.print("=== End ledger hash comparison ===")
+
+
+def assert_validated_ledgers_match(plan, nodes):
+    """Assert every node reports the same validated ledger hash.
+
+    Uses ledger_index="validated" so each node returns whatever its
+    latest validated ledger is — no hardcoded seqs, no race against
+    the close/validate cycle. The first node's validated hash is
+    captured and every subsequent node's validated hash is compared
+    to it via plan.verify, which supports runtime-value substitution
+    across service boundaries.
+
+    This does NOT retry — it's a point-in-time snapshot. Callers are
+    expected to have already driven the follower node to a synced
+    state (via wait_for_ledger_seq) before invoking this. If a
+    follower hasn't converged yet, the verify fails loudly rather
+    than silently waiting.
+
+    Args:
+        plan: Kurtosis plan object.
+        nodes: List of node descriptor dicts (length >= 2). The first
+            node is the reference; all others must match it.
+    """
+    if len(nodes) < 2:
+        fail("assert_validated_ledgers_match needs at least two nodes")
+
+    reference = nodes[0]
+    plan.print(
+        "=== Validated-ledger hash match vs {} ===".format(reference["name"]),
+    )
+
+    # Capture the reference node's validated ledger hash.
+    ref_result = plan.request(
+        service_name = reference["name"],
+        recipe = ledger_recipe("validated"),
+        acceptable_codes = [200],
+        description = "capture reference validated ledger",
+    )
+
+    # For every follower, query its validated hash and verify equality
+    # against the reference. plan.verify does runtime substitution on
+    # both sides of the comparison, so cross-service hash matching
+    # actually works (unlike plan.wait's target_value, which is
+    # evaluated as a literal string).
+    for node in nodes[1:]:
+        plan.print(
+            "  {} validated ledger must match {}".format(
+                node["name"],
+                reference["name"],
+            ),
+        )
+        follower_result = plan.request(
+            service_name = node["name"],
+            recipe = ledger_recipe("validated"),
+            acceptable_codes = [200],
+            description = "capture {} validated ledger".format(node["name"]),
+        )
+        plan.verify(
+            value = follower_result["extract.ledger_hash"],
+            assertion = "==",
+            target_value = ref_result["extract.ledger_hash"],
+        )
+    plan.print("=== Validated-ledger hash match confirmed ===")

@@ -6,6 +6,12 @@ const CONFIG_PATH = process.env.CONFIG_PATH || "/app/config.json";
 const PORT = parseInt(process.env.PORT || "8080", 10);
 const STATIC_DIR = path.join(__dirname, "static");
 
+// Requires Node 22+ for global WebSocket (set by the Kurtosis image).
+if (typeof WebSocket === "undefined") {
+  console.error("FATAL: global WebSocket not available — needs node >= 22");
+  process.exit(1);
+}
+
 const MIME = {
   ".html": "text/html",
   ".css": "text/css",
@@ -14,12 +20,15 @@ const MIME = {
   ".svg": "image/svg+xml",
 };
 
-let config = { nodes: [], poll_interval_ms: 2000 };
+let config = { nodes: [], poll_interval_ms: 5000 };
 let nodeStates = {};
 // Rolling log of raw server_info responses per node (last 100 entries).
 let nodeLogs = {};
 const MAX_LOG_ENTRIES = 100;
 let sseClients = [];
+// Active XRPL subscribe-stream WS per node, keyed by node name.
+// Replaced on reconnect; a dead/closed socket is never left in the map.
+const wsByNode = new Map();
 
 function loadConfig() {
   try {
@@ -72,6 +81,83 @@ function rpcCall(rpcUrl, method) {
   });
 }
 
+// openLedgerStream opens a persistent XRPL subscribe stream to the node
+// and pushes ledgerClosed events into nodeStates as they arrive, instead
+// of waiting for the next HTTP poll cycle. This eliminates the polling-
+// phase artifact where one node appears to be ahead of another simply
+// because its poll landed a few hundred ms earlier in the close cycle.
+//
+// On disconnect it reconnects with a short backoff — enough to ride out
+// container restarts without hammering an unhealthy node.
+function openLedgerStream(node) {
+  if (!node.ws) return;
+  let ws;
+  try {
+    ws = new WebSocket(node.ws);
+  } catch (e) {
+    console.error(`[ws ${node.name}] ctor failed: ${e.message}`);
+    scheduleReconnect(node);
+    return;
+  }
+  wsByNode.set(node.name, ws);
+
+  ws.addEventListener("open", () => {
+    ws.send(JSON.stringify({ command: "subscribe", streams: ["ledger"] }));
+    pushLog(node.name, new Date().toISOString(), "ws", "subscribed to ledger stream");
+  });
+
+  ws.addEventListener("message", (ev) => {
+    let msg;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+    // ledgerClosed events arrive for every new validated ledger. We
+    // update validated_ledger and fan out to SSE clients immediately.
+    if (msg.type !== "ledgerClosed") return;
+
+    const seq = msg.ledger_index;
+    const hash = msg.ledger_hash;
+    if (seq == null || !hash) return;
+
+    const ts = new Date().toISOString();
+    const prev = nodeStates[node.name] || { name: node.name, type: node.type };
+    nodeStates[node.name] = {
+      ...prev,
+      name: node.name,
+      type: node.type,
+      validated_ledger: { seq, hash },
+    };
+    pushLog(node.name, ts, "ledger", `ws-validated=#${seq} hash=${hash.slice(0, 16)}…`);
+    broadcastSnapshot();
+  });
+
+  ws.addEventListener("close", () => {
+    wsByNode.delete(node.name);
+    scheduleReconnect(node);
+  });
+
+  ws.addEventListener("error", () => {
+    // Close handler will schedule the reconnect — no double-schedule.
+    try { ws.close(); } catch {}
+  });
+}
+
+function scheduleReconnect(node) {
+  setTimeout(() => openLedgerStream(node), 2000);
+}
+
+function broadcastSnapshot() {
+  const snapshot = JSON.stringify({
+    timestamp: Date.now(),
+    nodes: config.nodes.map((n) => nodeStates[n.name] || { name: n.name, status: "pending" }),
+  });
+  for (const client of sseClients) {
+    client.write(`data: ${snapshot}\n\n`);
+  }
+}
+
 async function pollNode(node) {
   const ts = new Date().toISOString();
   try {
@@ -87,6 +173,13 @@ async function pollNode(node) {
       pushLog(node.name, ts, "error", "No info in response");
       return;
     }
+    // Merge HTTP fields without clobbering validated_ledger that the WS
+    // stream may have pushed ahead of our poll. WS is the source of
+    // truth for the flip event; HTTP fills in everything else (peers,
+    // uptime, last_close, etc.) and bootstraps validated_ledger before
+    // the first ledgerClosed arrives.
+    const prev = nodeStates[node.name] || {};
+    const wsValidated = prev.validated_ledger;
     nodeStates[node.name] = {
       name: node.name,
       type: node.type,
@@ -96,16 +189,16 @@ async function pollNode(node) {
       uptime: info.uptime,
       peers: info.peers,
       complete_ledgers: info.complete_ledgers,
-      validated_ledger: info.validated_ledger || null,
+      validated_ledger: wsValidated || info.validated_ledger || null,
       closed_ledger: info.closed_ledger || null,
       ledger_current_index: info.ledger_current_index || null,
       last_close: info.last_close || null,
       network_id: info.network_id,
       pubkey_node: info.pubkey_node,
     };
-    // Build a concise log line from the state.
-    const seq = info.validated_ledger
-      ? `validated=#${info.validated_ledger.seq}`
+    const vl = nodeStates[node.name].validated_ledger;
+    const seq = vl
+      ? `validated=#${vl.seq}`
       : info.closed_ledger
         ? `closed=#${info.closed_ledger.seq}`
         : info.ledger_current_index
@@ -135,13 +228,7 @@ function pushLog(name, ts, level, message) {
 
 async function pollAll() {
   await Promise.allSettled(config.nodes.map(pollNode));
-  const snapshot = JSON.stringify({
-    timestamp: Date.now(),
-    nodes: config.nodes.map((n) => nodeStates[n.name] || { name: n.name, status: "pending" }),
-  });
-  for (const client of sseClients) {
-    client.write(`data: ${snapshot}\n\n`);
-  }
+  broadcastSnapshot();
 }
 
 function serveStatic(req, res) {
@@ -213,6 +300,12 @@ const server = http.createServer((req, res) => {
 loadConfig();
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Dashboard running on http://0.0.0.0:${PORT}`);
+  // Open a persistent XRPL subscribe stream per node. These push ledger
+  // close events into nodeStates immediately; HTTP polling stays as a
+  // coarser fallback for peers/state/uptime.
+  for (const node of config.nodes) {
+    openLedgerStream(node);
+  }
   setInterval(pollAll, config.poll_interval_ms);
   pollAll();
 });

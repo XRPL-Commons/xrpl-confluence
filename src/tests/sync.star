@@ -83,20 +83,25 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
 
     # --- Phase 2: Launch a fresh goXRPL node ---
     plan.print("  Launching fresh goXRPL node...")
-    new_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config)
+    new_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config, name_prefix = "goxrpl-late")
     new_node = new_nodes[0]
 
     # --- Phase 3: Wait for the new node to sync ---
     plan.print("  Waiting for " + new_node["name"] + " to sync (closed_seq >= 3)...")
     helpers.wait_for_ledger_seq(plan, new_node, 3, timeout = "60s")
 
-    plan.print("  Waiting for " + new_node["name"] + " to reach closed_seq >= 8...")
-    helpers.wait_for_ledger_seq(plan, new_node, 8, timeout = "120s")
+    plan.print("  Waiting for " + new_node["name"] + " to reach closed_seq >= 15...")
+    helpers.wait_for_ledger_seq(plan, new_node, 15, timeout = "120s")
 
     # --- Phase 4: Verify state consistency ---
-    plan.print("  Comparing ledger hashes between existing and new node...")
+    # Use ledger_index="validated" to dodge the race where a hardcoded
+    # seq isn't closed/validated on one of the nodes yet. Both the
+    # reference rippled node and the freshly-synced goXRPL must agree
+    # on the same validated ledger hash — that's the real proof that
+    # goXRPL processed the same history rippled did.
+    plan.print("  Comparing validated ledger between reference and new node...")
     compare_nodes = [reference_node, new_node]
-    helpers.query_ledger_hashes(plan, compare_nodes, 5)
+    helpers.assert_validated_ledgers_match(plan, compare_nodes)
 
     # Verify the new node can serve account data for the funded destination.
     plan.print("  Checking destination account on new node...")

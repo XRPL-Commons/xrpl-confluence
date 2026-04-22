@@ -4,7 +4,7 @@ PEER_PORT = 51235
 RPC_PORT = 5005
 WS_PORT = 6006
 
-def launch(plan, count, image, network_config):
+def launch(plan, count, image, network_config, name_prefix = "goxrpl"):
     """Launch goXRPL validator nodes.
 
     Args:
@@ -12,6 +12,7 @@ def launch(plan, count, image, network_config):
         count: Number of goXRPL nodes to launch.
         image: Docker image for goXRPL.
         network_config: Shared network configuration artifact.
+        name_prefix: Service name prefix (default: "goxrpl").
 
     Returns:
         List of node descriptors with service references.
@@ -20,7 +21,7 @@ def launch(plan, count, image, network_config):
     configs = {}
 
     for i in range(count):
-        name = "goxrpl-{}".format(i)
+        name = "{}-{}".format(name_prefix, i)
         configs[name] = ServiceConfig(
             image = image,
             ports = {

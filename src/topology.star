@@ -198,8 +198,11 @@ io_workers = 0
 prefetch_workers = 0
 
 network_id = {network_id}
-ledger_replay = 0
+# Advertise the ledgerreplay X-Protocol-Ctl feature so rippled peers
+# will accept our mtREPLAY_DELTA_REQUEST and send us mtREPLAY_DELTA_RESPONSE.
+ledger_replay = 1
 ssl_verify = 0
+genesis_amendments_disabled = true
 
 database_path = "/tmp/goxrpl/db"
 debug_logfile = "/tmp/goxrpl/db/debug.log"
@@ -216,7 +219,7 @@ rpc_startup = [
 ]
 
 [logging]
-level = "info"
+level = "debug"
 format = "text"
 output = "stdout"
 
