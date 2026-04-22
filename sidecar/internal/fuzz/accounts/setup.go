@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
@@ -14,6 +15,11 @@ var (
 	SetupLimit      = "1000000" // trust-line limit in IOU units
 	SetupIOUFunding = "10000"   // amount of IOU each holder receives from each issuer
 	SetupLedgerWait = 5 * time.Second
+	// SetupMaxRetries is the number of times to retry a transient RPC error
+	// (e.g. noCurrent, notReady, tooBusy) before giving up.
+	SetupMaxRetries = 6
+	// SetupRetryDelay is the wait between retries for transient errors.
+	SetupRetryDelay = 2 * time.Second
 )
 
 // SetupState seeds a dense trust-line + IOU-balance mesh between every pair
@@ -42,21 +48,17 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 			if i == j {
 				continue
 			}
-			res, err := client.SubmitTrustSet(
-				wallets[i].Seed,
-				wallets[i].ClassicAddress,
-				SetupCurrency,
-				wallets[j].ClassicAddress,
-				SetupLimit,
-			)
-			if err != nil {
+			if err := retrySubmit(SetupMaxRetries, func() (*rpcclient.SubmitResult, error) {
+				return client.SubmitTrustSet(
+					wallets[i].Seed,
+					wallets[i].ClassicAddress,
+					SetupCurrency,
+					wallets[j].ClassicAddress,
+					SetupLimit,
+				)
+			}); err != nil {
 				return fmt.Errorf("trustset %s→%s: %w",
 					wallets[i].ClassicAddress, wallets[j].ClassicAddress, err)
-			}
-			if res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED" {
-				return fmt.Errorf("trustset %s→%s: engine=%s (%s)",
-					wallets[i].ClassicAddress, wallets[j].ClassicAddress,
-					res.EngineResult, res.EngineResultMessage)
 			}
 		}
 	}
@@ -73,23 +75,56 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 				"issuer":   wallets[j].ClassicAddress,
 				"value":    SetupIOUFunding,
 			}
-			res, err := client.SubmitPaymentIOU(
-				wallets[j].Seed,
-				wallets[j].ClassicAddress,
-				wallets[i].ClassicAddress,
-				amount,
-			)
-			if err != nil {
+			if err := retrySubmit(SetupMaxRetries, func() (*rpcclient.SubmitResult, error) {
+				return client.SubmitPaymentIOU(
+					wallets[j].Seed,
+					wallets[j].ClassicAddress,
+					wallets[i].ClassicAddress,
+					amount,
+				)
+			}); err != nil {
 				return fmt.Errorf("iou payment %s→%s: %w",
 					wallets[j].ClassicAddress, wallets[i].ClassicAddress, err)
-			}
-			if res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED" {
-				return fmt.Errorf("iou payment %s→%s: engine=%s (%s)",
-					wallets[j].ClassicAddress, wallets[i].ClassicAddress,
-					res.EngineResult, res.EngineResultMessage)
 			}
 		}
 	}
 	time.Sleep(SetupLedgerWait)
 	return nil
+}
+
+// retrySubmit calls fn up to maxRetries times, sleeping SetupRetryDelay between
+// attempts, if the error looks transient (noCurrent, notReady, tooBusy).
+// Non-transient errors and non-success engine results are returned immediately.
+func retrySubmit(maxRetries int, fn func() (*rpcclient.SubmitResult, error)) error {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(SetupRetryDelay)
+		}
+		res, err := fn()
+		if err != nil {
+			if isTransientRPCError(err) {
+				lastErr = err
+				continue
+			}
+			return err
+		}
+		if res.EngineResult == "tesSUCCESS" || res.EngineResult == "terQUEUED" {
+			return nil
+		}
+		return fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
+	}
+	return fmt.Errorf("transient error after %d retries: %w", maxRetries, lastErr)
+}
+
+// isTransientRPCError reports whether an error from the RPC layer is likely
+// transient — i.e., the node is not yet ready (noCurrent, notReady, tooBusy).
+func isTransientRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "noCurrent") ||
+		strings.Contains(msg, "notReady") ||
+		strings.Contains(msg, "tooBusy")
 }
