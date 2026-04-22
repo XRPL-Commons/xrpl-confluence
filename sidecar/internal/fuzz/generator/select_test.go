@@ -30,6 +30,27 @@ func TestPickTx_OnlyProducesTypesWithSatisfiedAmendments(t *testing.T) {
 	}
 }
 
+func TestPickTx_DeterministicFromSeed(t *testing.T) {
+	pool, _ := accounts.NewPool(0xfeed, 5)
+	g := New(pool)
+
+	r1 := corpus.NewRNG(42).Rand()
+	r2 := corpus.NewRNG(42).Rand()
+
+	var seq1, seq2 []string
+	for i := 0; i < 50; i++ {
+		a, _ := g.PickTx(r1, []string{})
+		b, _ := g.PickTx(r2, []string{})
+		seq1 = append(seq1, a.TransactionType)
+		seq2 = append(seq2, b.TransactionType)
+	}
+	for i := range seq1 {
+		if seq1[i] != seq2[i] {
+			t.Fatalf("diverged at step %d: %q vs %q", i, seq1[i], seq2[i])
+		}
+	}
+}
+
 func TestPickTx_SkipsUnsatisfiedAmendments(t *testing.T) {
 	registerForTest(CandidateTx{
 		TransactionType: "FakeAMMDeposit",
