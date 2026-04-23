@@ -36,7 +36,9 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 			hash := "H" + strings.Repeat("0", 63-len("H")) + string(rune('0'+int(n%10)))
 			_, _ = w.Write([]byte(`{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"","tx_json":{"hash":"` + hash + `"},"status":"success"}}`))
 		case "tx":
-			_, _ = w.Write([]byte(`{"result":{"meta":{"TransactionResult":"tesSUCCESS"},"validated":true}}`))
+			_, _ = w.Write([]byte(`{"result":{"meta":{"TransactionResult":"tesSUCCESS","AffectedNodes":[]},"validated":true}}`))
+		case "account_info":
+			_, _ = w.Write([]byte(`{"result":{"account_data":{"Account":"r","Balance":"1000000000","Sequence":1},"status":"success"}}`))
 		default:
 			_, _ = w.Write([]byte(`{"result":{"status":"success"}}`))
 		}

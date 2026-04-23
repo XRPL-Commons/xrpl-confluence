@@ -55,15 +55,23 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	}
 	orc := oracle.New(nodes)
 	rec := corpus.NewRecorder(cfg.CorpusDir, cfg.Seed)
-	rng := corpus.NewRNG(cfg.Seed)
-
-	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
-		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
 
 	pool, err := accounts.NewPool(cfg.Seed, cfg.AccountN)
 	if err != nil {
 		return nil, fmt.Errorf("account pool: %w", err)
 	}
+
+	addrs := []string{accounts.GenesisAddress}
+	for _, w := range pool.All() {
+		addrs = append(addrs, w.ClassicAddress)
+	}
+	inv := oracle.NewInvariantPoolBalance(addrs)
+
+	rng := corpus.NewRNG(cfg.Seed)
+
+	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
+		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
+
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
 			return nil, fmt.Errorf("fund pool: %w", err)
@@ -137,6 +145,23 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			}
 		}
 
+		// Layer 3: cross-node metadata diff on the same tx.
+		if res.TxHash != "" {
+			meta := orc.CompareTxMetadata(ctx, res.TxHash)
+			if !meta.Agreed {
+				atomic.AddInt64(&stats.Divergences, 1)
+				_ = rec.RecordDivergence(&corpus.Divergence{
+					Kind:        "metadata",
+					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
+					Details: map[string]any{
+						"tx_hash":   res.TxHash,
+						"tx_type":   tx.TransactionType(),
+						"node_meta": meta.NodeMeta,
+					},
+				})
+			}
+		}
+
 		// Periodically run layer-1 oracle.
 		if cfg.BatchClose > 0 && i%10 == 9 {
 			time.Sleep(cfg.BatchClose)
@@ -155,6 +180,15 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					}
 				}
 				lastCompared = info.Validated.Seq
+
+				if err := inv.CheckLedger(submit); err != nil {
+					atomic.AddInt64(&stats.Divergences, 1)
+					_ = rec.RecordDivergence(&corpus.Divergence{
+						Kind:        "invariant",
+						Description: err.Error(),
+						Details:     map[string]any{"invariant": "pool_balance_monotone"},
+					})
+				}
 			}
 		}
 	}
