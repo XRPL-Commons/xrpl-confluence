@@ -84,3 +84,19 @@ func TestSubmitPaymentIOU_SendsIOUAmountStructure(t *testing.T) {
 		t.Fatalf("Amount content = %v", gotAmt)
 	}
 }
+
+func TestSubmitResult_ExposesAssignedSequence(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"","tx_json":{"hash":"ABCD","Sequence":42},"status":"success"}}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	res, err := c.SubmitPayment("s", "rA", "rB", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Sequence != 42 {
+		t.Fatalf("Sequence = %d, want 42", res.Sequence)
+	}
+}

@@ -159,11 +159,12 @@ func (c *Client) Ledger(seq int) (*LedgerResult, error) {
 
 // SubmitResult holds the result of a transaction submission.
 type SubmitResult struct {
-	EngineResult        string `json:"engine_result"`
-	EngineResultCode    int    `json:"engine_result_code"`
-	EngineResultMessage string `json:"engine_result_message"`
-	TxHash              string `json:"tx_hash"`
-	Status              string `json:"status"`
+	EngineResult        string
+	EngineResultCode    int
+	EngineResultMessage string
+	TxHash              string
+	Sequence            uint32
+	Status              string
 }
 
 // feeMultMax is passed to every sign-and-submit call so that rippled does not
@@ -386,7 +387,8 @@ func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 		EngineResultCode    int    `json:"engine_result_code"`
 		EngineResultMessage string `json:"engine_result_message"`
 		TxJSON              struct {
-			Hash string `json:"hash"`
+			Hash     string `json:"hash"`
+			Sequence uint32 `json:"Sequence"`
 		} `json:"tx_json"`
 		Status       string `json:"status"`
 		Error        string `json:"error"`
@@ -409,6 +411,7 @@ func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 		EngineResultCode:    result.EngineResultCode,
 		EngineResultMessage: result.EngineResultMessage,
 		TxHash:              result.TxJSON.Hash,
+		Sequence:            result.TxJSON.Sequence,
 		Status:              result.Status,
 	}, nil
 }
