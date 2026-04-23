@@ -21,15 +21,16 @@ import (
 
 // Config is the runner's entire input surface.
 type Config struct {
-	NodeURLs   []string
-	SubmitURL  string
-	Seed       uint64
-	AccountN   int
-	TxCount    int
-	CorpusDir  string
-	BatchClose time.Duration
-	SkipFund   bool // escape hatch: skip genesis funding (unit tests)
-	SkipSetup  bool // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
+	NodeURLs     []string
+	SubmitURL    string
+	Seed         uint64
+	AccountN     int
+	TxCount      int
+	CorpusDir    string
+	BatchClose   time.Duration
+	SkipFund     bool    // escape hatch: skip genesis funding (unit tests)
+	SkipSetup    bool    // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
+	MutationRate float64 // 0..1; probability each generated tx is mutated
 }
 
 // Stats summarises one run.
@@ -38,6 +39,7 @@ type Stats struct {
 	TxsSubmitted    int64  `json:"txs_submitted"`
 	TxsSucceeded    int64  `json:"txs_succeeded"`
 	TxsFailed       int64  `json:"txs_failed"`
+	TxsMutated      int64  `json:"txs_mutated"`
 	Divergences     int64  `json:"divergences"`
 	LedgersCompared int64  `json:"ledgers_compared"`
 }
@@ -113,6 +115,13 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			log.Printf("realtime: generator: %v", err)
 			continue
+		}
+
+		if cfg.MutationRate > 0 {
+			if mutated, didMutate := gen.Mutator().Maybe(rng.Rand(), tx, cfg.MutationRate); didMutate {
+				tx = mutated
+				atomic.AddInt64(&stats.TxsMutated, 1)
+			}
 		}
 
 		atomic.AddInt64(&stats.TxsSubmitted, 1)
