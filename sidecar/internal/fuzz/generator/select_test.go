@@ -21,7 +21,7 @@ func TestPickTx_OnlyProducesTypesWithSatisfiedAmendments(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		counts[tx.TransactionType]++
+		counts[tx.TransactionType()]++
 	}
 	for _, k := range []string{"Payment", "TrustSet", "OfferCreate"} {
 		if counts[k] == 0 {
@@ -41,8 +41,8 @@ func TestPickTx_DeterministicFromSeed(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		a, _ := g.PickTx(r1, []string{})
 		b, _ := g.PickTx(r2, []string{})
-		seq1 = append(seq1, a.TransactionType)
-		seq2 = append(seq2, b.TransactionType)
+		seq1 = append(seq1, a.TransactionType())
+		seq2 = append(seq2, b.TransactionType())
 	}
 	for i := range seq1 {
 		if seq1[i] != seq2[i] {
@@ -56,8 +56,7 @@ func TestPickTx_SkipsUnsatisfiedAmendments(t *testing.T) {
 		TransactionType: "FakeAMMDeposit",
 		RequiresAll:     []string{"AMM"},
 		Build: func(_ *Generator, _ anyRand) (*Tx, error) {
-			t := &Tx{TransactionType: "FakeAMMDeposit"}
-			return t, nil
+			return &Tx{Fields: map[string]any{"TransactionType": "FakeAMMDeposit"}}, nil
 		},
 	})
 	t.Cleanup(unregisterForTest("FakeAMMDeposit"))
@@ -71,7 +70,7 @@ func TestPickTx_SkipsUnsatisfiedAmendments(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if tx.TransactionType == "FakeAMMDeposit" {
+		if tx.TransactionType() == "FakeAMMDeposit" {
 			t.Fatal("selected tx type whose required amendment was not enabled")
 		}
 	}

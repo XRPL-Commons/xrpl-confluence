@@ -21,12 +21,14 @@ func (g *Generator) TrustSet(r *mathrand.Rand) (*Tx, error) {
 	limit := strconv.Itoa(r.IntN(10_000) + 1)
 
 	return &Tx{
-		TransactionType: "TrustSet",
-		Account:         acct.ClassicAddress,
-		LimitAmount: map[string]any{
-			"currency": currency,
-			"issuer":   issuer.ClassicAddress,
-			"value":    limit,
+		Fields: map[string]any{
+			"TransactionType": "TrustSet",
+			"Account":         acct.ClassicAddress,
+			"LimitAmount": map[string]any{
+				"currency": currency,
+				"issuer":   issuer.ClassicAddress,
+				"value":    limit,
+			},
 		},
 		Secret: acct.Seed,
 	}, nil

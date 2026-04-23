@@ -343,6 +343,21 @@ func (c *Client) Tx(hash string) (*TxResult, error) {
 	}, nil
 }
 
+// SubmitTxJSON submits an arbitrary tx_json object under the given secret.
+// Generic path used by fuzzer tx types that don't map to the per-type
+// helpers. The tx_json must include TransactionType and Account.
+func (c *Client) SubmitTxJSON(secret string, txJSON map[string]any) (*SubmitResult, error) {
+	raw, err := c.Call("submit", map[string]interface{}{
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
+		"tx_json":      txJSON,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseSubmitResult(raw)
+}
+
 // SubmitPaymentIOU submits a Payment whose Amount is an IOU (currency+issuer+value)
 // rather than a drops string. Useful for setup paths that need to fund trust lines.
 func (c *Client) SubmitPaymentIOU(secret, account, destination string, amount map[string]any) (*SubmitResult, error) {

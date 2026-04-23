@@ -16,18 +16,19 @@ func TestTrustSet_WellFormed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tx.TransactionType != "TrustSet" {
-		t.Fatalf("type = %q", tx.TransactionType)
+	if tx.TransactionType() != "TrustSet" {
+		t.Fatalf("type = %q", tx.TransactionType())
 	}
-	if tx.LimitAmount == nil {
-		t.Fatal("LimitAmount missing")
+	la, ok := tx.Fields["LimitAmount"].(map[string]any)
+	if !ok {
+		t.Fatal("LimitAmount missing or wrong type")
 	}
 	for _, k := range []string{"currency", "issuer", "value"} {
-		if _, ok := tx.LimitAmount[k]; !ok {
+		if _, ok := la[k]; !ok {
 			t.Fatalf("LimitAmount missing key %q", k)
 		}
 	}
-	if tx.LimitAmount["issuer"] == tx.Account {
+	if la["issuer"] == tx.Fields["Account"] {
 		t.Fatal("cannot trust-set to self")
 	}
 }
