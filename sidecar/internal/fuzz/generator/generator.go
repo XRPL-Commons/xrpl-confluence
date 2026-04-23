@@ -25,15 +25,18 @@ func (t *Tx) TransactionType() string {
 type Generator struct {
 	pool    *accounts.Pool
 	mutator *Mutator
+	tracker *Tracker
 }
 
 // New constructs a Generator over the given pool.
 func New(pool *accounts.Pool) *Generator {
-	return &Generator{pool: pool, mutator: NewMutator()}
+	return &Generator{pool: pool, mutator: NewMutator(), tracker: NewTracker()}
 }
 
 // Mutator exposes the Generator's mutator so callers can apply mutations
 // post-PickTx. Kept separate from PickTx so tests can run zero-mutation.
-func (g *Generator) Mutator() *Mutator {
-	return g.mutator
-}
+func (g *Generator) Mutator() *Mutator { return g.mutator }
+
+// Tracker exposes the Generator's tracker so callers can record successful
+// tx submissions and consult tracked state when building referencing tx types.
+func (g *Generator) Tracker() *Tracker { return g.tracker }
