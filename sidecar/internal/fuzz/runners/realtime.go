@@ -112,9 +112,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			if err != nil {
-				log.Printf("realtime: submit %s: %v", tx.TransactionType, err)
+				log.Printf("realtime: submit %s: %v", tx.TransactionType(), err)
 			} else {
-				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType, res.EngineResult, res.EngineResultMessage)
+				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType(), res.EngineResult, res.EngineResultMessage)
 			}
 			continue
 		}
@@ -130,7 +130,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s disagreed across nodes", res.TxHash),
 					Details: map[string]any{
 						"tx_hash":      res.TxHash,
-						"tx_type":      tx.TransactionType,
+						"tx_type":      tx.TransactionType(),
 						"node_results": cmp.NodeResults,
 					},
 				})
@@ -171,20 +171,7 @@ func nodeName(u string) string {
 	return name
 }
 
-// submitTx dispatches a Tx through the rpcclient's typed helpers.
+// submitTx dispatches a Tx through the generic SubmitTxJSON path.
 func submitTx(client *rpcclient.Client, tx *generator.Tx) (*rpcclient.SubmitResult, error) {
-	switch tx.TransactionType {
-	case "Payment":
-		amt, _ := tx.Amount.(string)
-		return client.SubmitPayment(tx.Secret, tx.Account, tx.Destination, amt)
-	case "TrustSet":
-		return client.SubmitTrustSet(tx.Secret, tx.Account,
-			tx.LimitAmount["currency"].(string),
-			tx.LimitAmount["issuer"].(string),
-			tx.LimitAmount["value"].(string))
-	case "OfferCreate":
-		return client.SubmitOfferCreate(tx.Secret, tx.Account, tx.TakerPays, tx.TakerGets)
-	default:
-		return nil, fmt.Errorf("unsupported tx type %q", tx.TransactionType)
-	}
+	return client.SubmitTxJSON(tx.Secret, tx.Fields)
 }

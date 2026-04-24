@@ -16,18 +16,18 @@ func TestPayment_ValidXRPPayment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Payment: %v", err)
 	}
-	if tx.TransactionType != "Payment" {
-		t.Fatalf("TransactionType = %q, want Payment", tx.TransactionType)
+	if tx.TransactionType() != "Payment" {
+		t.Fatalf("TransactionType = %q, want Payment", tx.TransactionType())
 	}
-	if tx.Account == "" || tx.Destination == "" {
+	if tx.Fields["Account"] == "" || tx.Fields["Destination"] == "" {
 		t.Fatal("missing Account or Destination")
 	}
-	if tx.Account == tx.Destination {
+	if tx.Fields["Account"] == tx.Fields["Destination"] {
 		t.Fatal("Account and Destination must differ")
 	}
-	amt, ok := tx.Amount.(string)
+	amt, ok := tx.Fields["Amount"].(string)
 	if !ok {
-		t.Fatalf("Amount = %T, want string (drops)", tx.Amount)
+		t.Fatalf("Amount = %T, want string (drops)", tx.Fields["Amount"])
 	}
 	if amt == "" {
 		t.Fatal("empty amount")
@@ -42,7 +42,7 @@ func TestPayment_DeterministicFromSeed(t *testing.T) {
 	r2 := corpus.NewRNG(7).Rand()
 	a, _ := g.Payment(r1)
 	b, _ := g.Payment(r2)
-	if a.Account != b.Account || a.Destination != b.Destination || a.Amount != b.Amount {
-		t.Fatalf("Payment not deterministic: %+v vs %+v", a, b)
+	if a.Fields["Account"] != b.Fields["Account"] || a.Fields["Destination"] != b.Fields["Destination"] || a.Fields["Amount"] != b.Fields["Amount"] {
+		t.Fatalf("Payment not deterministic: %+v vs %+v", a.Fields, b.Fields)
 	}
 }
