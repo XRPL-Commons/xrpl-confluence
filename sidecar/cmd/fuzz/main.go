@@ -2,15 +2,31 @@
 // from environment variables (same pattern as trafficgen) and runs the
 // realtime runner against the confluence topology.
 //
-// Environment variables:
+// MODE switches the binary between "fuzz" (default, synthetic generator),
+// "replay" (mainnet tx-shape replay), and "reproduce" (replay a saved run log).
+// Replay adds these env vars:
 //
-//	NODES       — comma-separated node URLs for oracle observation (required)
-//	SUBMIT_URL  — node tx submissions go to (default: first NODES entry)
-//	FUZZ_SEED   — uint64; missing → crypto-random (logged at start)
-//	TX_COUNT    — total tx submissions (default 100)
-//	ACCOUNTS    — account pool size (default 10)
-//	CORPUS_DIR  — divergence output directory (default /output/corpus)
-//	BATCH_CLOSE — duration between layer-1 batch checks (default 5s)
+//	MAINNET_URL          — public rippled JSON-RPC (default https://s1.ripple.com:51234)
+//	REPLAY_LEDGER_START  — first ledger to replay (required in replay mode)
+//	REPLAY_LEDGER_END    — last ledger to replay, inclusive (required)
+//
+// reproduce mode:
+//
+//	REPRODUCE_LOG — path to ndjson run log to replay (required in reproduce mode)
+//
+// Common environment variables:
+//
+//	NODES         — comma-separated node URLs for oracle observation (required)
+//	SUBMIT_URL    — node tx submissions go to (default: first NODES entry)
+//	FUZZ_SEED     — uint64; missing → crypto-random (logged at start)
+//	ACCOUNTS      — account pool size (default 10)
+//	CORPUS_DIR    — divergence output directory (default /output/corpus)
+//	BATCH_CLOSE   — duration between layer-1 batch checks (default 5s)
+//
+// Fuzz-only environment variables:
+//
+//	TX_COUNT      — total tx submissions (default 100)
+//	MUTATION_RATE — float 0..1; probability each generated tx is mutated (default 0.0)
 package main
 
 import (
@@ -31,31 +47,71 @@ import (
 
 func main() {
 	flag.Parse()
-	cfg, err := loadConfig()
-	if err != nil {
-		log.Fatalf("config: %v", err)
-	}
-
-	log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s",
-		cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir)
+	mode := envDefault("MODE", "fuzz")
 
 	var statsMu sync.RWMutex
 	var currentStats *runners.Stats
-
 	go serveHTTP(&statsMu, &currentStats)
 
 	ctx := context.Background()
-	stats, err := runners.Run(ctx, *cfg)
-	if err != nil {
-		log.Fatalf("run: %v", err)
+
+	switch mode {
+	case "fuzz":
+		cfg, err := loadConfig()
+		if err != nil {
+			log.Fatalf("config: %v", err)
+		}
+		log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s mutation_rate=%.2f",
+			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir, cfg.MutationRate)
+		stats, err := runners.Run(ctx, *cfg)
+		if err != nil {
+			log.Fatalf("run: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(stats, "", "  ")
+		log.Printf("fuzz: done\n%s", blob)
+
+	case "replay":
+		rcfg, err := loadReplayConfig()
+		if err != nil {
+			log.Fatalf("replay config: %v", err)
+		}
+		log.Printf("replay: seed=%d nodes=%d submit=%s mainnet=%s range=%d..%d accounts=%d corpus=%s",
+			rcfg.Seed, len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.MainnetURL,
+			rcfg.LedgerStart, rcfg.LedgerEnd, rcfg.AccountN, rcfg.CorpusDir)
+		stats, err := runners.ReplayRun(ctx, *rcfg)
+		if err != nil {
+			log.Fatalf("replay: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(stats, "", "  ")
+		log.Printf("replay: done\n%s", blob)
+
+	case "reproduce":
+		rcfg, err := loadReproduceConfig()
+		if err != nil {
+			log.Fatalf("reproduce config: %v", err)
+		}
+		log.Printf("reproduce: nodes=%d submit=%s log=%s",
+			len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.LogPath)
+		stats, err := runners.Reproduce(ctx, *rcfg)
+		if err != nil {
+			log.Fatalf("reproduce: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(stats, "", "  ")
+		log.Printf("reproduce: done\n%s", blob)
+
+	default:
+		log.Fatalf("unknown MODE %q (want fuzz, replay, or reproduce)", mode)
 	}
 
-	statsMu.Lock()
-	currentStats = stats
-	statsMu.Unlock()
-
-	blob, _ := json.MarshalIndent(stats, "", "  ")
-	log.Printf("fuzz: done\n%s", blob)
 	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
 	select {}
 }
@@ -84,15 +140,88 @@ func loadConfig() (*runners.Config, error) {
 	accounts := envInt("ACCOUNTS", 10)
 	corpusDir := envDefault("CORPUS_DIR", "/output/corpus")
 	batchClose := envDuration("BATCH_CLOSE", 5*time.Second)
+	mutationRate := envFloat("MUTATION_RATE", 0.0)
 
 	return &runners.Config{
-		NodeURLs:   nodes,
-		SubmitURL:  submit,
-		Seed:       seed,
-		AccountN:   accounts,
-		TxCount:    txCount,
-		CorpusDir:  corpusDir,
-		BatchClose: batchClose,
+		NodeURLs:     nodes,
+		SubmitURL:    submit,
+		Seed:         seed,
+		AccountN:     accounts,
+		TxCount:      txCount,
+		CorpusDir:    corpusDir,
+		BatchClose:   batchClose,
+		MutationRate: mutationRate,
+	}, nil
+}
+
+func loadReplayConfig() (*runners.ReplayConfig, error) {
+	nodes := strings.Split(os.Getenv("NODES"), ",")
+	if len(nodes) < 2 || nodes[0] == "" {
+		return nil, fmtErr("NODES must list >= 2 comma-separated URLs")
+	}
+	for i, n := range nodes {
+		n = strings.TrimSpace(n)
+		if !strings.HasPrefix(n, "http") {
+			n = "http://" + n
+		}
+		nodes[i] = n
+	}
+	submit := os.Getenv("SUBMIT_URL")
+	if submit == "" {
+		submit = nodes[0]
+	} else if !strings.HasPrefix(submit, "http") {
+		submit = "http://" + submit
+	}
+
+	mainnetURL := envDefault("MAINNET_URL", "https://s1.ripple.com:51234")
+	start := envInt("REPLAY_LEDGER_START", 0)
+	end := envInt("REPLAY_LEDGER_END", 0)
+	if start <= 0 || end <= 0 || end < start {
+		return nil, fmtErr("REPLAY_LEDGER_START and REPLAY_LEDGER_END required (>0, end>=start)")
+	}
+
+	return &runners.ReplayConfig{
+		NodeURLs:    nodes,
+		SubmitURL:   submit,
+		MainnetURL:  mainnetURL,
+		Seed:        corpus.SeedFromEnv("FUZZ_SEED"),
+		AccountN:    envInt("ACCOUNTS", 10),
+		LedgerStart: start,
+		LedgerEnd:   end,
+		CorpusDir:   envDefault("CORPUS_DIR", "/output/corpus"),
+		BatchClose:  envDuration("BATCH_CLOSE", 5*time.Second),
+	}, nil
+}
+
+func loadReproduceConfig() (*runners.ReproduceConfig, error) {
+	nodes := strings.Split(os.Getenv("NODES"), ",")
+	if len(nodes) < 2 || nodes[0] == "" {
+		return nil, fmtErr("NODES must list >= 2 comma-separated URLs")
+	}
+	for i, n := range nodes {
+		n = strings.TrimSpace(n)
+		if !strings.HasPrefix(n, "http") {
+			n = "http://" + n
+		}
+		nodes[i] = n
+	}
+	submit := os.Getenv("SUBMIT_URL")
+	if submit == "" {
+		submit = nodes[0]
+	} else if !strings.HasPrefix(submit, "http") {
+		submit = "http://" + submit
+	}
+
+	logPath := os.Getenv("REPRODUCE_LOG")
+	if logPath == "" {
+		return nil, fmtErr("REPRODUCE_LOG env var required (path to ndjson run log)")
+	}
+
+	return &runners.ReproduceConfig{
+		NodeURLs:  nodes,
+		SubmitURL: submit,
+		LogPath:   logPath,
+		CorpusDir: envDefault("CORPUS_DIR", "/output/corpus"),
 	}, nil
 }
 
@@ -114,6 +243,14 @@ func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+func envFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return def

@@ -21,14 +21,16 @@ import (
 
 // Config is the runner's entire input surface.
 type Config struct {
-	NodeURLs   []string
-	SubmitURL  string
-	Seed       uint64
-	AccountN   int
-	TxCount    int
-	CorpusDir  string
-	BatchClose time.Duration
-	SkipFund   bool // unit-test escape hatch
+	NodeURLs     []string
+	SubmitURL    string
+	Seed         uint64
+	AccountN     int
+	TxCount      int
+	CorpusDir    string
+	BatchClose   time.Duration
+	SkipFund     bool    // escape hatch: skip genesis funding (unit tests)
+	SkipSetup    bool    // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
+	MutationRate float64 // 0..1; probability each generated tx is mutated
 }
 
 // Stats summarises one run.
@@ -37,6 +39,7 @@ type Stats struct {
 	TxsSubmitted    int64  `json:"txs_submitted"`
 	TxsSucceeded    int64  `json:"txs_succeeded"`
 	TxsFailed       int64  `json:"txs_failed"`
+	TxsMutated      int64  `json:"txs_mutated"`
 	Divergences     int64  `json:"divergences"`
 	LedgersCompared int64  `json:"ledgers_compared"`
 }
@@ -54,20 +57,41 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	}
 	orc := oracle.New(nodes)
 	rec := corpus.NewRecorder(cfg.CorpusDir, cfg.Seed)
-	rng := corpus.NewRNG(cfg.Seed)
 
-	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
-		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
+	txLog, err := corpus.NewRunLog(cfg.CorpusDir, cfg.Seed)
+	if err != nil {
+		return nil, fmt.Errorf("run log: %w", err)
+	}
+	defer txLog.Close()
 
 	pool, err := accounts.NewPool(cfg.Seed, cfg.AccountN)
 	if err != nil {
 		return nil, fmt.Errorf("account pool: %w", err)
 	}
+
+	addrs := []string{accounts.GenesisAddress}
+	for _, w := range pool.All() {
+		addrs = append(addrs, w.ClassicAddress)
+	}
+	inv := oracle.NewInvariantPoolBalance(addrs)
+
+	rng := corpus.NewRNG(cfg.Seed)
+
+	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
+		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
+
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
+	}
+	if !cfg.SkipSetup {
+		log.Printf("realtime: seeding state mesh (%d accounts) ...", cfg.AccountN)
+		if err := accounts.SetupState(submit, pool); err != nil {
+			return nil, fmt.Errorf("setup state: %w", err)
+		}
+		log.Printf("realtime: state mesh seeded")
 	}
 
 	enabled, err := generator.DiscoverEnabledAmendments(submit)
@@ -99,18 +123,33 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			continue
 		}
 
+		if cfg.MutationRate > 0 {
+			if mutated, didMutate := gen.Mutator().Maybe(rng.Rand(), tx, cfg.MutationRate); didMutate {
+				tx = mutated
+				atomic.AddInt64(&stats.TxsMutated, 1)
+			}
+		}
+
 		atomic.AddInt64(&stats.TxsSubmitted, 1)
 		res, err := submitTx(submit, tx)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			if err != nil {
-				log.Printf("realtime: submit %s: %v", tx.TransactionType, err)
+				log.Printf("realtime: submit %s: %v", tx.TransactionType(), err)
 			} else {
-				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType, res.EngineResult, res.EngineResultMessage)
+				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType(), res.EngineResult, res.EngineResultMessage)
 			}
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)
+		_ = txLog.Append(&corpus.RunLogEntry{
+			Step:   i,
+			TxType: tx.TransactionType(),
+			Fields: tx.Fields,
+			Secret: tx.Secret,
+			Result: res.EngineResult,
+			TxHash: res.TxHash,
+		})
 
 		// Layer 2: compare result on all nodes once the tx is validated.
 		if res.TxHash != "" {
@@ -122,10 +161,35 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s disagreed across nodes", res.TxHash),
 					Details: map[string]any{
 						"tx_hash":      res.TxHash,
-						"tx_type":      tx.TransactionType,
+						"tx_type":      tx.TransactionType(),
 						"node_results": cmp.NodeResults,
 					},
 				})
+			}
+		}
+
+		// Layer 3: cross-node metadata diff on the same tx.
+		if res.TxHash != "" {
+			meta := orc.CompareTxMetadata(ctx, res.TxHash)
+			if !meta.Agreed {
+				atomic.AddInt64(&stats.Divergences, 1)
+				_ = rec.RecordDivergence(&corpus.Divergence{
+					Kind:        "metadata",
+					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
+					Details: map[string]any{
+						"tx_hash":   res.TxHash,
+						"tx_type":   tx.TransactionType(),
+						"node_meta": meta.NodeMeta,
+					},
+				})
+			}
+		}
+
+		// Tracker feedback: on successful EscrowCreate, record (owner, sequence) so
+		// EscrowFinish / EscrowCancel become eligible in future picks.
+		if tx.TransactionType() == "EscrowCreate" && res.Sequence > 0 {
+			if account, ok := tx.Fields["Account"].(string); ok {
+				gen.Tracker().Escrows().Record(account, res.Sequence)
 			}
 		}
 
@@ -147,6 +211,15 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					}
 				}
 				lastCompared = info.Validated.Seq
+
+				if err := inv.CheckLedger(submit); err != nil {
+					atomic.AddInt64(&stats.Divergences, 1)
+					_ = rec.RecordDivergence(&corpus.Divergence{
+						Kind:        "invariant",
+						Description: err.Error(),
+						Details:     map[string]any{"invariant": "pool_balance_monotone"},
+					})
+				}
 			}
 		}
 	}
@@ -163,20 +236,7 @@ func nodeName(u string) string {
 	return name
 }
 
-// submitTx dispatches a Tx through the rpcclient's typed helpers.
+// submitTx dispatches a Tx through the generic SubmitTxJSON path.
 func submitTx(client *rpcclient.Client, tx *generator.Tx) (*rpcclient.SubmitResult, error) {
-	switch tx.TransactionType {
-	case "Payment":
-		amt, _ := tx.Amount.(string)
-		return client.SubmitPayment(tx.Secret, tx.Account, tx.Destination, amt)
-	case "TrustSet":
-		return client.SubmitTrustSet(tx.Secret, tx.Account,
-			tx.LimitAmount["currency"].(string),
-			tx.LimitAmount["issuer"].(string),
-			tx.LimitAmount["value"].(string))
-	case "OfferCreate":
-		return client.SubmitOfferCreate(tx.Secret, tx.Account, tx.TakerPays, tx.TakerGets)
-	default:
-		return nil, fmt.Errorf("unsupported tx type %q", tx.TransactionType)
-	}
+	return client.SubmitTxJSON(tx.Secret, tx.Fields)
 }

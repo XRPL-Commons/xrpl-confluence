@@ -18,11 +18,13 @@ func (g *Generator) OfferCreate(r *mathrand.Rand) (*Tx, error) {
 		"value":    strconv.Itoa(r.IntN(1_000) + 1),
 	}
 	return &Tx{
-		TransactionType: "OfferCreate",
-		Account:         acct.ClassicAddress,
-		TakerPays:       takerPays,
-		TakerGets:       takerGets,
-		Secret:          acct.Seed,
+		Fields: map[string]any{
+			"TransactionType": "OfferCreate",
+			"Account":         acct.ClassicAddress,
+			"TakerPays":       takerPays,
+			"TakerGets":       takerGets,
+		},
+		Secret: acct.Seed,
 	}, nil
 }
 

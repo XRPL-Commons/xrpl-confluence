@@ -16,17 +16,17 @@ func TestOfferCreate_WellFormed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tx.TransactionType != "OfferCreate" {
-		t.Fatalf("type = %q", tx.TransactionType)
+	if tx.TransactionType() != "OfferCreate" {
+		t.Fatalf("type = %q", tx.TransactionType())
 	}
-	if _, ok := tx.TakerPays.(string); !ok {
-		t.Fatalf("TakerPays = %T, want string", tx.TakerPays)
+	if _, ok := tx.Fields["TakerPays"].(string); !ok {
+		t.Fatalf("TakerPays = %T, want string", tx.Fields["TakerPays"])
 	}
-	gets, ok := tx.TakerGets.(map[string]any)
+	gets, ok := tx.Fields["TakerGets"].(map[string]any)
 	if !ok {
-		t.Fatalf("TakerGets = %T, want map", tx.TakerGets)
+		t.Fatalf("TakerGets = %T, want map", tx.Fields["TakerGets"])
 	}
-	if gets["issuer"] == tx.Account {
+	if gets["issuer"] == tx.Fields["Account"] {
 		t.Fatal("issuer equals Account")
 	}
 }

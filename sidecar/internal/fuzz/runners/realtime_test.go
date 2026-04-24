@@ -3,6 +3,7 @@ package runners
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 )
 
 // Stubs every RPC path the runner touches (feature, submit, server_info,
@@ -36,7 +39,9 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 			hash := "H" + strings.Repeat("0", 63-len("H")) + string(rune('0'+int(n%10)))
 			_, _ = w.Write([]byte(`{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"","tx_json":{"hash":"` + hash + `"},"status":"success"}}`))
 		case "tx":
-			_, _ = w.Write([]byte(`{"result":{"meta":{"TransactionResult":"tesSUCCESS"},"validated":true}}`))
+			_, _ = w.Write([]byte(`{"result":{"meta":{"TransactionResult":"tesSUCCESS","AffectedNodes":[]},"validated":true}}`))
+		case "account_info":
+			_, _ = w.Write([]byte(`{"result":{"account_data":{"Account":"r","Balance":"1000000000","Sequence":1},"status":"success"}}`))
 		default:
 			_, _ = w.Write([]byte(`{"result":{"status":"success"}}`))
 		}
@@ -49,14 +54,16 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 	corpusDir := t.TempDir()
 
 	cfg := Config{
-		NodeURLs:   []string{srvA.URL, srvB.URL},
-		SubmitURL:  srvA.URL,
-		Seed:       0x1234,
-		AccountN:   4,
-		TxCount:    5,
-		CorpusDir:  corpusDir,
-		BatchClose: 50 * time.Millisecond,
-		SkipFund:   true, // Tests don't model genesis state; skip the funding phase.
+		NodeURLs:     []string{srvA.URL, srvB.URL},
+		SubmitURL:    srvA.URL,
+		Seed:         0x1234,
+		AccountN:     4,
+		TxCount:      5,
+		CorpusDir:    corpusDir,
+		BatchClose:   50 * time.Millisecond,
+		SkipFund:     true, // Tests don't model genesis state; skip the funding phase.
+		SkipSetup:    true, // Tests don't provide a mesh-capable mock; skip trust-line seeding.
+		MutationRate: 0,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -77,5 +84,18 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(corpusDir, "divergences"))
 	if len(entries) != 0 {
 		t.Fatalf("corpus had %d entries, want 0", len(entries))
+	}
+
+	// Verify the run log was written with one entry per successful submit.
+	logPath := filepath.Join(corpusDir, "runs", fmt.Sprintf("%x.ndjson", cfg.Seed))
+	if _, err := os.Stat(logPath); err != nil {
+		t.Fatalf("run log missing: %v", err)
+	}
+	logEntries, err := corpus.ReadRunLog(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(logEntries)) != stats.TxsSucceeded {
+		t.Fatalf("run log rows = %d, want TxsSucceeded=%d", len(logEntries), stats.TxsSucceeded)
 	}
 }

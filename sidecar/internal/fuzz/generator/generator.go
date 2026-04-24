@@ -4,34 +4,39 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
 )
 
-// Tx is the fuzzer's transport-neutral transaction representation. We deliberately
-// don't expose xrpl-go's rich tx types at the generator boundary — the runner
-// serializes via xrpl-go's json codec and submits through rpcclient.
-//
-// The xrpl-go types are used to build and validate these structures inside
-// the generator (see payment.go et al.).
+// Tx is the fuzzer's transport-neutral transaction representation. Fields
+// holds the full tx_json object (TransactionType + all tx-specific fields);
+// Secret is kept separate so it's never accidentally serialized on-wire.
 type Tx struct {
-	TransactionType string         `json:"TransactionType"`
-	Account         string         `json:"Account"`
-	Destination     string         `json:"Destination,omitempty"`
-	Amount          any            `json:"Amount,omitempty"`
-	LimitAmount     map[string]any `json:"LimitAmount,omitempty"`
-	TakerPays       any            `json:"TakerPays,omitempty"`
-	TakerGets       any            `json:"TakerGets,omitempty"`
+	Fields map[string]any `json:"-"`
+	Secret string         `json:"-"`
+}
 
-	// Secret is intentionally exported so the runner can sign-and-submit
-	// without cracking open the struct; it's NEVER logged or sent into the
-	// tx_json on the wire. The runner passes it to the `secret` RPC param.
-	Secret string `json:"-"`
+// TransactionType returns the TransactionType field, for convenience.
+func (t *Tx) TransactionType() string {
+	if s, ok := t.Fields["TransactionType"].(string); ok {
+		return s
+	}
+	return ""
 }
 
 // Generator builds well-formed transactions from an account pool. M1 ships
 // three tx types: Payment, TrustSet, OfferCreate.
 type Generator struct {
-	pool *accounts.Pool
+	pool    *accounts.Pool
+	mutator *Mutator
+	tracker *Tracker
 }
 
 // New constructs a Generator over the given pool.
 func New(pool *accounts.Pool) *Generator {
-	return &Generator{pool: pool}
+	return &Generator{pool: pool, mutator: NewMutator(), tracker: NewTracker()}
 }
+
+// Mutator exposes the Generator's mutator so callers can apply mutations
+// post-PickTx. Kept separate from PickTx so tests can run zero-mutation.
+func (g *Generator) Mutator() *Mutator { return g.mutator }
+
+// Tracker exposes the Generator's tracker so callers can record successful
+// tx submissions and consult tracked state when building referencing tx types.
+func (g *Generator) Tracker() *Tracker { return g.tracker }
