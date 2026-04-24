@@ -4,6 +4,7 @@ propagation = import_module("./propagation.star")
 sync = import_module("./sync.star")
 consensus = import_module("./consensus.star")
 fuzz = import_module("./fuzz.star")
+replay = import_module("./replay.star")
 
 def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None):
     """Run the specified interop test suite.
@@ -39,5 +40,9 @@ def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None):
     if suite == "fuzz":
         plan.print("=== Running fuzz suite ===")
         results["fuzz"] = fuzz.run(plan, nodes)
+
+    if suite == "replay":
+        plan.print("=== Running replay suite ===")
+        results["replay"] = replay.run(plan, nodes)
 
     return results
