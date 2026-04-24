@@ -4,13 +4,14 @@
 //
 // Environment variables:
 //
-//	NODES       — comma-separated node URLs for oracle observation (required)
-//	SUBMIT_URL  — node tx submissions go to (default: first NODES entry)
-//	FUZZ_SEED   — uint64; missing → crypto-random (logged at start)
-//	TX_COUNT    — total tx submissions (default 100)
-//	ACCOUNTS    — account pool size (default 10)
-//	CORPUS_DIR  — divergence output directory (default /output/corpus)
-//	BATCH_CLOSE — duration between layer-1 batch checks (default 5s)
+//	NODES         — comma-separated node URLs for oracle observation (required)
+//	SUBMIT_URL    — node tx submissions go to (default: first NODES entry)
+//	FUZZ_SEED     — uint64; missing → crypto-random (logged at start)
+//	TX_COUNT      — total tx submissions (default 100)
+//	ACCOUNTS      — account pool size (default 10)
+//	CORPUS_DIR    — divergence output directory (default /output/corpus)
+//	BATCH_CLOSE   — duration between layer-1 batch checks (default 5s)
+//	MUTATION_RATE — float 0..1; probability each generated tx is mutated (default 0.0)
 package main
 
 import (
@@ -36,8 +37,8 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s",
-		cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir)
+	log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s mutation_rate=%.2f",
+		cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir, cfg.MutationRate)
 
 	var statsMu sync.RWMutex
 	var currentStats *runners.Stats
@@ -84,15 +85,17 @@ func loadConfig() (*runners.Config, error) {
 	accounts := envInt("ACCOUNTS", 10)
 	corpusDir := envDefault("CORPUS_DIR", "/output/corpus")
 	batchClose := envDuration("BATCH_CLOSE", 5*time.Second)
+	mutationRate := envFloat("MUTATION_RATE", 0.0)
 
 	return &runners.Config{
-		NodeURLs:   nodes,
-		SubmitURL:  submit,
-		Seed:       seed,
-		AccountN:   accounts,
-		TxCount:    txCount,
-		CorpusDir:  corpusDir,
-		BatchClose: batchClose,
+		NodeURLs:     nodes,
+		SubmitURL:    submit,
+		Seed:         seed,
+		AccountN:     accounts,
+		TxCount:      txCount,
+		CorpusDir:    corpusDir,
+		BatchClose:   batchClose,
+		MutationRate: mutationRate,
 	}, nil
 }
 
@@ -114,6 +117,14 @@ func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+func envFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
 		}
 	}
 	return def
