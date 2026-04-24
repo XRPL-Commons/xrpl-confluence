@@ -75,3 +75,28 @@ func TestPickTx_SkipsUnsatisfiedAmendments(t *testing.T) {
 		}
 	}
 }
+
+func TestPickTx_CanBuildGateExcludesIneligible(t *testing.T) {
+	registerForTest(CandidateTx{
+		TransactionType: "AlwaysIneligible",
+		CanBuild:        func(_ *Generator) bool { return false },
+		Build: func(_ *Generator, _ anyRand) (*Tx, error) {
+			return &Tx{Fields: map[string]any{"TransactionType": "AlwaysIneligible"}}, nil
+		},
+	})
+	t.Cleanup(unregisterForTest("AlwaysIneligible"))
+
+	pool, _ := accounts.NewPool(1, 5)
+	g := New(pool)
+	r := corpus.NewRNG(1).Rand()
+
+	for i := 0; i < 100; i++ {
+		tx, err := g.PickTx(r, []string{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tx.TransactionType() == "AlwaysIneligible" {
+			t.Fatal("CanBuild=false candidate was selected")
+		}
+	}
+}

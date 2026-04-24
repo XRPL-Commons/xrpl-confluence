@@ -15,6 +15,7 @@ type anyRand = *mathrand.Rand
 type CandidateTx struct {
 	TransactionType string
 	RequiresAll     []string
+	CanBuild        func(g *Generator) bool // optional; nil = always eligible
 	Build           func(g *Generator, r anyRand) (*Tx, error)
 }
 
@@ -66,9 +67,13 @@ func (g *Generator) PickTx(r anyRand, enabledAmendments []string) (*Tx, error) {
 
 	eligible := make([]CandidateTx, 0, len(all))
 	for _, c := range all {
-		if allIn(enabled, c.RequiresAll) {
-			eligible = append(eligible, c)
+		if !allIn(enabled, c.RequiresAll) {
+			continue
 		}
+		if c.CanBuild != nil && !c.CanBuild(g) {
+			continue
+		}
+		eligible = append(eligible, c)
 	}
 
 	if len(eligible) == 0 {

@@ -171,6 +171,14 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			}
 		}
 
+		// Tracker feedback: on successful EscrowCreate, record (owner, sequence) so
+		// EscrowFinish / EscrowCancel become eligible in future picks.
+		if tx.TransactionType() == "EscrowCreate" && res.Sequence > 0 {
+			if account, ok := tx.Fields["Account"].(string); ok {
+				gen.Tracker().Escrows().Record(account, res.Sequence)
+			}
+		}
+
 		// Periodically run layer-1 oracle.
 		if cfg.BatchClose > 0 && i%10 == 9 {
 			time.Sleep(cfg.BatchClose)
