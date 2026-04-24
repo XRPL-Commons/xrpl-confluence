@@ -316,13 +316,14 @@ func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
 	}, nil
 }
 
-// TxResult holds the relevant field from a `tx` RPC response.
+// TxResult holds the relevant fields from a `tx` RPC response.
 type TxResult struct {
-	TransactionResult string `json:"transaction_result"`
-	Validated         bool   `json:"validated"`
+	TransactionResult string          `json:"transaction_result"`
+	Validated         bool            `json:"validated"`
+	AffectedNodes     json.RawMessage `json:"affected_nodes,omitempty"`
 }
 
-// Tx looks up a transaction by hash and returns its result code.
+// Tx looks up a transaction by hash and returns its result code and metadata.
 func (c *Client) Tx(hash string) (*TxResult, error) {
 	raw, err := c.Call("tx", map[string]any{"transaction": hash})
 	if err != nil {
@@ -330,7 +331,8 @@ func (c *Client) Tx(hash string) (*TxResult, error) {
 	}
 	var wrapper struct {
 		Meta struct {
-			TransactionResult string `json:"TransactionResult"`
+			TransactionResult string          `json:"TransactionResult"`
+			AffectedNodes     json.RawMessage `json:"AffectedNodes"`
 		} `json:"meta"`
 		Validated bool `json:"validated"`
 	}
@@ -340,6 +342,7 @@ func (c *Client) Tx(hash string) (*TxResult, error) {
 	return &TxResult{
 		TransactionResult: wrapper.Meta.TransactionResult,
 		Validated:         wrapper.Validated,
+		AffectedNodes:     wrapper.Meta.AffectedNodes,
 	}, nil
 }
 
