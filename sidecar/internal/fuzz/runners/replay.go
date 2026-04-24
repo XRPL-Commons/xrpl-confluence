@@ -46,6 +46,12 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 	orc := oracle.New(nodes)
 	rec := corpus.NewRecorder(cfg.CorpusDir, cfg.Seed)
 
+	txLog, err := corpus.NewRunLog(cfg.CorpusDir, cfg.Seed)
+	if err != nil {
+		return nil, fmt.Errorf("run log: %w", err)
+	}
+	defer txLog.Close()
+
 	pool, err := accounts.NewPool(cfg.Seed, cfg.AccountN)
 	if err != nil {
 		return nil, fmt.Errorf("account pool: %w", err)
@@ -111,6 +117,15 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)
+		txType, _ := out["TransactionType"].(string)
+		_ = txLog.Append(&corpus.RunLogEntry{
+			Step:   i,
+			TxType: txType,
+			Fields: out,
+			Secret: secret,
+			Result: res.EngineResult,
+			TxHash: res.TxHash,
+		})
 
 		// Layer 2: compare result on all nodes once the tx is validated.
 		if res.TxHash != "" {

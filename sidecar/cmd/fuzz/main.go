@@ -2,12 +2,17 @@
 // from environment variables (same pattern as trafficgen) and runs the
 // realtime runner against the confluence topology.
 //
-// MODE switches the binary between "fuzz" (default, synthetic generator) and
-// "replay" (mainnet tx-shape replay). Replay adds these env vars:
+// MODE switches the binary between "fuzz" (default, synthetic generator),
+// "replay" (mainnet tx-shape replay), and "reproduce" (replay a saved run log).
+// Replay adds these env vars:
 //
 //	MAINNET_URL          — public rippled JSON-RPC (default https://s1.ripple.com:51234)
 //	REPLAY_LEDGER_START  — first ledger to replay (required in replay mode)
 //	REPLAY_LEDGER_END    — last ledger to replay, inclusive (required)
+//
+// reproduce mode:
+//
+//	REPRODUCE_LOG — path to ndjson run log to replay (required in reproduce mode)
 //
 // Common environment variables:
 //
@@ -86,8 +91,25 @@ func main() {
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("replay: done\n%s", blob)
 
+	case "reproduce":
+		rcfg, err := loadReproduceConfig()
+		if err != nil {
+			log.Fatalf("reproduce config: %v", err)
+		}
+		log.Printf("reproduce: nodes=%d submit=%s log=%s",
+			len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.LogPath)
+		stats, err := runners.Reproduce(ctx, *rcfg)
+		if err != nil {
+			log.Fatalf("reproduce: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(stats, "", "  ")
+		log.Printf("reproduce: done\n%s", blob)
+
 	default:
-		log.Fatalf("unknown MODE %q (want fuzz or replay)", mode)
+		log.Fatalf("unknown MODE %q (want fuzz, replay, or reproduce)", mode)
 	}
 
 	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
@@ -168,6 +190,38 @@ func loadReplayConfig() (*runners.ReplayConfig, error) {
 		LedgerEnd:   end,
 		CorpusDir:   envDefault("CORPUS_DIR", "/output/corpus"),
 		BatchClose:  envDuration("BATCH_CLOSE", 5*time.Second),
+	}, nil
+}
+
+func loadReproduceConfig() (*runners.ReproduceConfig, error) {
+	nodes := strings.Split(os.Getenv("NODES"), ",")
+	if len(nodes) < 2 || nodes[0] == "" {
+		return nil, fmtErr("NODES must list >= 2 comma-separated URLs")
+	}
+	for i, n := range nodes {
+		n = strings.TrimSpace(n)
+		if !strings.HasPrefix(n, "http") {
+			n = "http://" + n
+		}
+		nodes[i] = n
+	}
+	submit := os.Getenv("SUBMIT_URL")
+	if submit == "" {
+		submit = nodes[0]
+	} else if !strings.HasPrefix(submit, "http") {
+		submit = "http://" + submit
+	}
+
+	logPath := os.Getenv("REPRODUCE_LOG")
+	if logPath == "" {
+		return nil, fmtErr("REPRODUCE_LOG env var required (path to ndjson run log)")
+	}
+
+	return &runners.ReproduceConfig{
+		NodeURLs:  nodes,
+		SubmitURL: submit,
+		LogPath:   logPath,
+		CorpusDir: envDefault("CORPUS_DIR", "/output/corpus"),
 	}, nil
 }
 

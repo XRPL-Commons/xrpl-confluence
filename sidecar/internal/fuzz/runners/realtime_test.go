@@ -3,6 +3,7 @@ package runners
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 )
 
 // Stubs every RPC path the runner touches (feature, submit, server_info,
@@ -81,5 +84,18 @@ func TestRealtime_RunSubmitsAndClosesCorpus(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(corpusDir, "divergences"))
 	if len(entries) != 0 {
 		t.Fatalf("corpus had %d entries, want 0", len(entries))
+	}
+
+	// Verify the run log was written with one entry per successful submit.
+	logPath := filepath.Join(corpusDir, "runs", fmt.Sprintf("%x.ndjson", cfg.Seed))
+	if _, err := os.Stat(logPath); err != nil {
+		t.Fatalf("run log missing: %v", err)
+	}
+	logEntries, err := corpus.ReadRunLog(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(logEntries)) != stats.TxsSucceeded {
+		t.Fatalf("run log rows = %d, want TxsSucceeded=%d", len(logEntries), stats.TxsSucceeded)
 	}
 }
