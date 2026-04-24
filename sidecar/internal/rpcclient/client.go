@@ -166,10 +166,17 @@ type SubmitResult struct {
 	Status              string `json:"status"`
 }
 
+// feeMultMax is passed to every sign-and-submit call so that rippled does not
+// reject transactions when the network load_factor temporarily elevates the
+// reference fee above the default 10× cushion. 1000× (= 10 000 drops at a 10-
+// drop base fee) is deliberately generous for a test network.
+const feeMultMax = 1000
+
 // SubmitPayment submits a signed Payment using sign-and-submit.
 func (c *Client) SubmitPayment(secret, account, destination, amount string) (*SubmitResult, error) {
 	raw, err := c.Call("submit", map[string]interface{}{
-		"secret": secret,
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
 		"tx_json": map[string]interface{}{
 			"TransactionType": "Payment",
 			"Account":         account,
@@ -186,7 +193,8 @@ func (c *Client) SubmitPayment(secret, account, destination, amount string) (*Su
 // SubmitTrustSet submits a TrustSet transaction using sign-and-submit.
 func (c *Client) SubmitTrustSet(secret, account, currency, issuer, limit string) (*SubmitResult, error) {
 	raw, err := c.Call("submit", map[string]interface{}{
-		"secret": secret,
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
 		"tx_json": map[string]interface{}{
 			"TransactionType": "TrustSet",
 			"Account":         account,
@@ -206,7 +214,8 @@ func (c *Client) SubmitTrustSet(secret, account, currency, issuer, limit string)
 // SubmitOfferCreate submits an OfferCreate transaction using sign-and-submit.
 func (c *Client) SubmitOfferCreate(secret, account string, takerPays, takerGets interface{}) (*SubmitResult, error) {
 	raw, err := c.Call("submit", map[string]interface{}{
-		"secret": secret,
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
 		"tx_json": map[string]interface{}{
 			"TransactionType": "OfferCreate",
 			"Account":         account,
@@ -223,7 +232,8 @@ func (c *Client) SubmitOfferCreate(secret, account string, takerPays, takerGets 
 // SubmitAccountSet submits an AccountSet transaction using sign-and-submit.
 func (c *Client) SubmitAccountSet(secret, account string, setFlag uint32) (*SubmitResult, error) {
 	raw, err := c.Call("submit", map[string]interface{}{
-		"secret": secret,
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
 		"tx_json": map[string]interface{}{
 			"TransactionType": "AccountSet",
 			"Account":         account,
@@ -333,6 +343,25 @@ func (c *Client) Tx(hash string) (*TxResult, error) {
 	}, nil
 }
 
+// SubmitPaymentIOU submits a Payment whose Amount is an IOU (currency+issuer+value)
+// rather than a drops string. Useful for setup paths that need to fund trust lines.
+func (c *Client) SubmitPaymentIOU(secret, account, destination string, amount map[string]any) (*SubmitResult, error) {
+	raw, err := c.Call("submit", map[string]interface{}{
+		"secret":       secret,
+		"fee_mult_max": feeMultMax,
+		"tx_json": map[string]interface{}{
+			"TransactionType": "Payment",
+			"Account":         account,
+			"Destination":     destination,
+			"Amount":          amount,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseSubmitResult(raw)
+}
+
 func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 	var result struct {
 		EngineResult        string `json:"engine_result"`
@@ -341,10 +370,20 @@ func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 		TxJSON              struct {
 			Hash string `json:"hash"`
 		} `json:"tx_json"`
-		Status string `json:"status"`
+		Status       string `json:"status"`
+		Error        string `json:"error"`
+		ErrorCode    int    `json:"error_code"`
+		ErrorMessage string `json:"error_message"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("parse submit result: %w", err)
+	}
+
+	// When rippled encounters an error before tx processing (e.g. noCurrent,
+	// tooBusy, notReady) it returns status="error" with no engine_result.
+	// Surface that as an explicit error so callers don't silently see empty strings.
+	if result.Status == "error" && result.EngineResult == "" {
+		return nil, fmt.Errorf("rpc error %s (%d): %s", result.Error, result.ErrorCode, result.ErrorMessage)
 	}
 
 	return &SubmitResult{
