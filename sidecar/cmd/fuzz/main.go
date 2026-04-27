@@ -3,8 +3,9 @@
 // realtime runner against the confluence topology.
 //
 // MODE switches the binary between "fuzz" (default, synthetic generator),
-// "replay" (mainnet tx-shape replay), and "reproduce" (replay a saved run log).
-// Replay adds these env vars:
+// "replay" (mainnet tx-shape replay), "reproduce" (replay a saved run log),
+// and "shrink" (single-probe shrinker — replay a prefix and check whether the
+// original divergence reproduces). Replay adds these env vars:
 //
 //	MAINNET_URL          — public rippled JSON-RPC (default https://s1.ripple.com:51234)
 //	REPLAY_LEDGER_START  — first ledger to replay (required in replay mode)
@@ -13,6 +14,14 @@
 // reproduce mode:
 //
 //	REPRODUCE_LOG — path to ndjson run log to replay (required in reproduce mode)
+//
+// shrink mode:
+//
+//	SHRINK_LOG              — path to ndjson run log (required)
+//	SHRINK_DIVERGENCE       — path to original divergence JSON (required; defines signature)
+//	SHRINK_MAX_STEP         — inclusive prefix cap on RunLogEntry.Step (required, >= 0)
+//	SHRINK_RETRIES          — extra in-probe re-checks before concluding "no match" (default 0)
+//	SHRINK_VALIDATE_TIMEOUT — per-tx wait for validated:true on every node (default 60s)
 //
 // Common environment variables:
 //
@@ -51,7 +60,8 @@ func main() {
 
 	var statsMu sync.RWMutex
 	var currentStats *runners.Stats
-	go serveHTTP(&statsMu, &currentStats)
+	var currentShrink *runners.ShrinkResult
+	go serveHTTP(&statsMu, &currentStats, &currentShrink)
 
 	ctx := context.Background()
 
@@ -108,8 +118,25 @@ func main() {
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("reproduce: done\n%s", blob)
 
+	case "shrink":
+		scfg, err := loadShrinkConfig()
+		if err != nil {
+			log.Fatalf("shrink config: %v", err)
+		}
+		log.Printf("shrink: nodes=%d submit=%s log=%s div=%s max_step=%d",
+			len(scfg.NodeURLs), scfg.SubmitURL, scfg.LogPath, scfg.DivergenceFile, scfg.MaxStep)
+		res, err := runners.Shrink(ctx, *scfg)
+		if err != nil {
+			log.Fatalf("shrink: %v", err)
+		}
+		statsMu.Lock()
+		currentShrink = res
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(res, "", "  ")
+		log.Printf("shrink: done\n%s", blob)
+
 	default:
-		log.Fatalf("unknown MODE %q (want fuzz, replay, or reproduce)", mode)
+		log.Fatalf("unknown MODE %q (want fuzz, replay, reproduce, or shrink)", mode)
 	}
 
 	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
@@ -225,6 +252,52 @@ func loadReproduceConfig() (*runners.ReproduceConfig, error) {
 	}, nil
 }
 
+func loadShrinkConfig() (*runners.ShrinkConfig, error) {
+	nodes := strings.Split(os.Getenv("NODES"), ",")
+	if len(nodes) < 2 || nodes[0] == "" {
+		return nil, fmtErr("NODES must list >= 2 comma-separated URLs")
+	}
+	for i, n := range nodes {
+		n = strings.TrimSpace(n)
+		if !strings.HasPrefix(n, "http") {
+			n = "http://" + n
+		}
+		nodes[i] = n
+	}
+	submit := os.Getenv("SUBMIT_URL")
+	if submit == "" {
+		submit = nodes[0]
+	} else if !strings.HasPrefix(submit, "http") {
+		submit = "http://" + submit
+	}
+
+	logPath := os.Getenv("SHRINK_LOG")
+	if logPath == "" {
+		return nil, fmtErr("SHRINK_LOG env var required (path to ndjson run log)")
+	}
+	divPath := os.Getenv("SHRINK_DIVERGENCE")
+	if divPath == "" {
+		return nil, fmtErr("SHRINK_DIVERGENCE env var required (path to original divergence JSON)")
+	}
+	maxStep := envInt("SHRINK_MAX_STEP", -1)
+	if maxStep < 0 {
+		return nil, fmtErr("SHRINK_MAX_STEP env var required (>= 0)")
+	}
+
+	return &runners.ShrinkConfig{
+		NodeURLs:        nodes,
+		SubmitURL:       submit,
+		Seed:            corpus.SeedFromEnv("FUZZ_SEED"),
+		AccountN:        envInt("ACCOUNTS", 10),
+		LogPath:         logPath,
+		DivergenceFile:  divPath,
+		MaxStep:         maxStep,
+		Retries:         envInt("SHRINK_RETRIES", 0),
+		CorpusDir:       envDefault("CORPUS_DIR", "/output/corpus"),
+		ValidateTimeout: envDuration("SHRINK_VALIDATE_TIMEOUT", 60*time.Second),
+	}, nil
+}
+
 func envDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -262,18 +335,19 @@ type stringErr struct{ s string }
 func (e *stringErr) Error() string { return e.s }
 
 type statusResponse struct {
-	State string         `json:"state"`
-	Stats *runners.Stats `json:"stats"`
+	State  string                `json:"state"`
+	Stats  *runners.Stats        `json:"stats,omitempty"`
+	Shrink *runners.ShrinkResult `json:"shrink,omitempty"`
 }
 
-func serveHTTP(mu *sync.RWMutex, sp **runners.Stats) {
+func serveHTTP(mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
 		defer mu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		resp := statusResponse{State: "running", Stats: *sp}
-		if *sp != nil {
+		resp := statusResponse{State: "running", Stats: *sp, Shrink: *shp}
+		if *sp != nil || *shp != nil {
 			resp.State = "completed"
 		}
 		_ = json.NewEncoder(w).Encode(resp)
