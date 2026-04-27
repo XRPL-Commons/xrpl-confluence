@@ -25,13 +25,15 @@ def run(plan, args = {}):
             - goxrpl_count: Number of goXRPL nodes (default: 1).
             - rippled_image: Docker image for rippled (default: "rippleci/rippled:2.6.2").
             - goxrpl_image: Docker image for goXRPL (default: "goxrpl:latest").
-            - test_suite: Which test suite to run: "all", "propagation", "sync", "consensus", "soak", "delayed_sync", "fuzz", "replay" (default: "all").
+            - test_suite: Which test suite to run: "all", "propagation", "sync", "consensus", "soak", "delayed_sync", "fuzz", "replay", "shrink" (default: "all").
+            - shrink_args: For test_suite == "shrink": dict with shrink_artifact, shrink_max_step, optionally seed/accounts/validate_timeout.
     """
     rippled_count = args.get("rippled_count", DEFAULT_RIPPLED_COUNT)
     goxrpl_count = args.get("goxrpl_count", DEFAULT_GOXRPL_COUNT)
     rippled_image = args.get("rippled_image", "rippleci/rippled:2.6.2")
     goxrpl_image = args.get("goxrpl_image", "goxrpl:latest")
     test_suite = args.get("test_suite", "all")
+    shrink_args = args.get("shrink_args")
 
     plan.print("Starting xrpl-confluence with {} rippled + {} goXRPL nodes".format(rippled_count, goxrpl_count))
 
@@ -59,6 +61,6 @@ def run(plan, args = {}):
 
     # Run interop test suite
     all_nodes = rippled_nodes + goxrpl_nodes
-    test_results = tests.run(plan, all_nodes, test_suite, goxrpl_image, network_config)
+    test_results = tests.run(plan, all_nodes, test_suite, goxrpl_image, network_config, shrink_args)
 
     return test_results
