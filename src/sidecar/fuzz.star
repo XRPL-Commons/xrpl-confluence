@@ -53,13 +53,28 @@ def launch(
     submit_url = "http://{}:5005".format(submit_node["name"])
 
     env = {
-        "MODE":        mode,
-        "NODES":       node_urls,
-        "SUBMIT_URL":  submit_url,
-        "ACCOUNTS":    str(accounts),
-        "BATCH_CLOSE": batch_close,
-        "CORPUS_DIR":  "/output/corpus",
+        "MODE":             mode,
+        "NODES":            node_urls,
+        "SUBMIT_URL":       submit_url,
+        "ACCOUNTS":         str(accounts),
+        "BATCH_CLOSE":      batch_close,
+        "CORPUS_DIR":       "/output/corpus",
+        "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
+        "CRASH_LABEL_VAL":  "node",
+        "CRASH_TAIL_LINES": "200",
     }
+    # NOTE: Kurtosis 1.x has no Starlark primitive for host-path bind mounts,
+    # so the Docker socket cannot be injected via this launcher alone. Crash
+    # detection requires one of:
+    #   - On Linux: run the Kurtosis engine with --volume
+    #     /var/run/docker.sock:/var/run/docker.sock and have the engine
+    #     forward that mount into enclaves.
+    #   - Run a docker-socket-proxy sidecar (e.g. tecnativa/docker-socket-proxy)
+    #     exposing TCP 2375 in the enclave, and set DOCKER_HOST=tcp://proxy:2375
+    #     in this env block.
+    # Without one of those, NewDockerRuntime() Pings and fails fast; the runner
+    # then logs "crash poller disabled — docker dial failed" and continues
+    # without crash detection. The fuzz/oracle layers still work.
     files = {}
 
     if mode == "fuzz":

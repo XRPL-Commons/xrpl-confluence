@@ -2,6 +2,7 @@ package crash
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,4 +90,17 @@ func TestPoller_IgnoresHealthyContainers(t *testing.T) {
 		t.Fatal("OnCrash fired for healthy container")
 	}
 	_ = time.Second
+}
+
+func TestNewDockerRuntime_PingFailure(t *testing.T) {
+	// Point at an unreachable TCP address so Ping returns an error quickly.
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+	_, err := NewDockerRuntime()
+	if err == nil {
+		t.Fatal("expected error when Docker daemon is unreachable, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "ping") && !strings.Contains(msg, "docker ping") {
+		t.Fatalf("error %q does not mention ping", msg)
+	}
 }

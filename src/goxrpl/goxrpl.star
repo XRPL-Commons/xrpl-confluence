@@ -33,6 +33,7 @@ def launch(plan, count, image, network_config, name_prefix = "goxrpl"):
                 "/etc/goxrpl": network_config,
             },
             cmd = ["server", "--conf", "/etc/goxrpl/goxrpl-{}.toml".format(i)],
+            labels = {"fuzzer.role": "node"},
         )
 
     services = plan.add_services(configs)
