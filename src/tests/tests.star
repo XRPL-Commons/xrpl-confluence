@@ -6,8 +6,9 @@ consensus = import_module("./consensus.star")
 fuzz = import_module("./fuzz.star")
 replay = import_module("./replay.star")
 shrink = import_module("./shrink.star")
+soak = import_module("./soak.star")
 
-def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, shrink_args = None):
+def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, shrink_args = None, args = {}):
     """Run the specified interop test suite.
 
     Args:
@@ -34,6 +35,10 @@ def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, 
     if suite == "all" or suite == "consensus":
         plan.print("=== Running consensus tests ===")
         results["consensus"] = consensus.run(plan, nodes, goxrpl_image, network_config)
+
+    if suite == "soak":
+        plan.print("=== Running soak ===")
+        return {"soak": soak.run(plan, nodes, args.get("soak_args", {}))}
 
     if suite == "fuzz":
         plan.print("=== Running fuzz suite ===")

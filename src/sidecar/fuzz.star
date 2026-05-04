@@ -110,3 +110,81 @@ def launch(
         ),
     )
     return service
+
+
+def launch_soak(
+    plan,
+    all_nodes,
+    submit_node,
+    tx_rate = 0,
+    rotate_every = 1000,
+    mutation_rate = 0.0,
+    accounts = 50,
+    corpus_host_path = ""):
+    """Launch the fuzz sidecar in soak (unbounded) mode.
+
+    See launch() for fuzz/shrink modes; this wrapper keeps soak's longer-lived
+    distinct service name (fuzz-soak) and persistent-volume output mount.
+
+    NOTE: Kurtosis 1.x does not support Directory(host_path=...) — the argument
+    is rejected at interpretation time with "unexpected keyword argument host_path".
+    The corpus is therefore stored in a Kurtosis persistent volume keyed
+    "fuzz-soak-output". After the enclave is torn down the volume persists and
+    can be extracted via `kurtosis service exec fuzz-soak 'tar -C /output -czf - corpus'`
+    before teardown, or via the C5 `make soak-pull` target which copies it out
+    with `docker cp`. The corpus_host_path argument is accepted for forward
+    compatibility but is currently ignored.
+
+    Args:
+        plan: Kurtosis plan object.
+        all_nodes: List of all node descriptors.
+        submit_node: Node descriptor to submit transactions to.
+        tx_rate: Transactions per second (0 = unlimited).
+        rotate_every: Rotate account tier every N transactions.
+        mutation_rate: Fraction [0,1] of transactions to mutate.
+        accounts: Number of test accounts to create.
+        corpus_host_path: Desired host path for corpus bind-mount (currently
+            ignored — see NOTE above). Reserved for when Kurtosis adds support.
+
+    Returns:
+        The fuzz-soak service reference.
+    """
+    node_urls = ",".join([
+        "http://{}:5005".format(n["name"]) for n in all_nodes
+    ])
+    submit_url = "http://{}:5005".format(submit_node["name"])
+
+    # Kurtosis 1.x has no host-path bind-mount primitive. Use a persistent
+    # volume so the corpus survives enclave restarts within the same run.
+    files = {
+        "/output": Directory(persistent_key = "fuzz-soak-output"),
+    }
+
+    return plan.add_service(
+        name = "fuzz-soak",
+        config = ServiceConfig(
+            image = "xrpl-confluence-sidecar:latest",
+            entrypoint = ["/fuzz"],
+            ports = {
+                "results": PortSpec(
+                    number = 8081,
+                    transport_protocol = "TCP",
+                    application_protocol = "http",
+                ),
+            },
+            files = files,
+            env_vars = {
+                "MODE":             "soak",
+                "NODES":            node_urls,
+                "SUBMIT_URL":       submit_url,
+                "ACCOUNTS":         str(accounts),
+                "TX_RATE":          str(tx_rate),
+                "ROTATE_EVERY":     str(rotate_every),
+                "MUTATION_RATE":    str(mutation_rate),
+                "CORPUS_DIR":       "/output/corpus",
+                "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
+                "CRASH_LABEL_VAL":  "node",
+                "CRASH_TAIL_LINES": "200",
+            },
+        ),
+    )
