@@ -14,6 +14,7 @@ import (
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/generator"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/oracle"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
@@ -31,6 +32,12 @@ type Config struct {
 	SkipFund     bool    // escape hatch: skip genesis funding (unit tests)
 	SkipSetup    bool    // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
 	MutationRate float64 // 0..1; probability each generated tx is mutated
+	// CrashRuntime, when non-nil, is polled once per BatchClose tick and
+	// crash events are recorded as divergences (kind="crash"). Nil disables.
+	CrashRuntime   crash.ContainerRuntime
+	CrashLabelKey  string // e.g. "fuzzer.role"
+	CrashLabelVal  string // e.g. "node"
+	CrashTailLines int    // log lines to capture on crash (default 200)
 }
 
 // Stats summarises one run.
@@ -57,6 +64,32 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	}
 	orc := oracle.New(nodes)
 	rec := corpus.NewRecorder(cfg.CorpusDir, cfg.Seed)
+
+	var stats Stats
+	stats.Seed = cfg.Seed
+
+	var poller *crash.Poller
+	if cfg.CrashRuntime != nil && cfg.CrashLabelVal != "" {
+		tail := cfg.CrashTailLines
+		if tail == 0 {
+			tail = 200
+		}
+		poller = crash.NewPoller(cfg.CrashRuntime, cfg.CrashLabelKey, cfg.CrashLabelVal, tail)
+		poller.OnCrash = func(e *crash.Event) {
+			atomic.AddInt64(&stats.Divergences, 1)
+			_ = rec.RecordDivergence(&corpus.Divergence{
+				Kind:        "crash",
+				Description: fmt.Sprintf("%s exited %d (%s)", e.Container, e.ExitCode, e.Kind),
+				Details: map[string]any{
+					"container":   e.Container,
+					"exit_code":   e.ExitCode,
+					"crash_kind":  e.Kind,
+					"marker_line": e.MarkerLine,
+					"log_tail":    e.LogTail,
+				},
+			})
+		}
+	}
 
 	txLog, err := corpus.NewRunLog(cfg.CorpusDir, cfg.Seed)
 	if err != nil {
@@ -101,9 +134,6 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	log.Printf("realtime: %d amendments enabled", len(enabled))
 
 	gen := generator.New(pool)
-
-	var stats Stats
-	stats.Seed = cfg.Seed
 
 	info, err := submit.ServerInfo()
 	if err != nil {
@@ -196,6 +226,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		// Periodically run layer-1 oracle.
 		if cfg.BatchClose > 0 && i%10 == 9 {
 			time.Sleep(cfg.BatchClose)
+			if poller != nil {
+				_ = poller.Tick(ctx)
+			}
 			info, err := submit.ServerInfo()
 			if err == nil {
 				for seq := lastCompared + 1; seq <= info.Validated.Seq; seq++ {

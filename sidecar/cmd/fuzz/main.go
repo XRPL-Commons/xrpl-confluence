@@ -51,6 +51,7 @@ import (
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/runners"
 )
 
@@ -169,7 +170,7 @@ func loadConfig() (*runners.Config, error) {
 	batchClose := envDuration("BATCH_CLOSE", 5*time.Second)
 	mutationRate := envFloat("MUTATION_RATE", 0.0)
 
-	return &runners.Config{
+	cfg := &runners.Config{
 		NodeURLs:     nodes,
 		SubmitURL:    submit,
 		Seed:         seed,
@@ -178,7 +179,23 @@ func loadConfig() (*runners.Config, error) {
 		CorpusDir:    corpusDir,
 		BatchClose:   batchClose,
 		MutationRate: mutationRate,
-	}, nil
+	}
+
+	if val := os.Getenv("CRASH_LABEL_VAL"); val != "" {
+		rt, err := crash.NewDockerRuntime()
+		if err != nil {
+			log.Printf("fuzz: crash poller disabled — docker dial failed: %v", err)
+		} else {
+			cfg.CrashRuntime = rt
+			cfg.CrashLabelKey = envDefault("CRASH_LABEL_KEY", "fuzzer.role")
+			cfg.CrashLabelVal = val
+			if n, err := strconv.Atoi(envDefault("CRASH_TAIL_LINES", "200")); err == nil {
+				cfg.CrashTailLines = n
+			}
+		}
+	}
+
+	return cfg, nil
 }
 
 func loadReplayConfig() (*runners.ReplayConfig, error) {
