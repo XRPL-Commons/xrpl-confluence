@@ -18,7 +18,7 @@ def run(
         nodes,
         shrink_artifact,
         shrink_max_step,
-        image = "trafficgen:latest",
+        image = "xrpl-confluence-sidecar:latest",
         accounts = 10,
         seed = None,
         validate_timeout = "60s"):

@@ -7,7 +7,7 @@ replay = import_module("../sidecar/replay.star")
 def run(
     plan,
     nodes,
-    image = "trafficgen:latest",
+    image = "xrpl-confluence-sidecar:latest",
     mainnet_url = "https://s1.ripple.com:51234",
     ledger_start = 80000000,
     ledger_end = 80000005,

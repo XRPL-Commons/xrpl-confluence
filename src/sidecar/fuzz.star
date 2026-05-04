@@ -15,7 +15,7 @@ def launch(
     plan,
     all_nodes,
     submit_node,
-    image = "trafficgen:latest",
+    image = "xrpl-confluence-sidecar:latest",
     mode = "fuzz",
     tx_count = 100,
     accounts = 10,
@@ -30,7 +30,7 @@ def launch(
         plan: Kurtosis plan object.
         all_nodes: List of all node descriptors.
         submit_node: Node descriptor to submit transactions to.
-        image: Docker image containing /fuzz binary (default "trafficgen:latest").
+        image: Docker image containing /fuzz binary (default "xrpl-confluence-sidecar:latest").
         mode: One of "fuzz" (default), "shrink". Other modes (replay/reproduce)
             currently use their own launcher; shrink is wired here because it
             shares everything with fuzz mode except the input files.

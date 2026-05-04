@@ -13,7 +13,7 @@ def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, 
     Args:
         plan: Kurtosis plan object.
         nodes: List of all node descriptors (rippled + goXRPL).
-        suite: Which suite to run - "all", "propagation", "sync", "consensus", "soak", "fuzz", "replay", "shrink".
+        suite: Which suite to run - "all", "propagation", "sync", "consensus", "fuzz", "replay", "shrink".
         goxrpl_image: Docker image for goXRPL (needed by sync tests to launch new nodes).
         network_config: Shared network configuration artifact.
         shrink_args: Dict with shrink-suite inputs: shrink_artifact, shrink_max_step, optionally seed/accounts/validate_timeout.
@@ -34,10 +34,6 @@ def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, 
     if suite == "all" or suite == "consensus":
         plan.print("=== Running consensus tests ===")
         results["consensus"] = consensus.run(plan, nodes, goxrpl_image, network_config)
-
-    if suite == "soak":
-        plan.print("=== Running consensus soak test ===")
-        results["soak"] = consensus.run_soak(plan, nodes)
 
     if suite == "fuzz":
         plan.print("=== Running fuzz suite ===")

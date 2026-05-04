@@ -9,7 +9,7 @@ helpers = import_module("../helpers/rpc.star")
 fuzz = import_module("../sidecar/fuzz.star")
 
 
-def run(plan, nodes, image = "trafficgen:latest", tx_count = 100, accounts = 10, seed = None):
+def run(plan, nodes, image = "xrpl-confluence-sidecar:latest", tx_count = 100, accounts = 10, seed = None):
     """Run the fuzz suite.
 
     Args:

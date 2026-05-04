@@ -5,7 +5,6 @@ consensus network and agree on validated ledgers.
 """
 
 helpers = import_module("../helpers/rpc.star")
-trafficgen = import_module("../sidecar/trafficgen.star")
 
 
 def run(plan, nodes, goxrpl_image = None, network_config = None):
@@ -34,74 +33,6 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
     plan.print("Test: all nodes agree on validated ledger hash")
     results["ledger_hash_agreement"] = _test_ledger_hash_agreement(plan, nodes)
 
-    return results
-
-
-def run_soak(plan, nodes, trafficgen_image = "trafficgen:latest", tx_count = 100, tx_mix = "payment:60,offer:20,trustset:10,accountset:10"):
-    """Run consensus soak test with traffic generator.
-
-    Launches the trafficgen sidecar, waits for it to complete, and fetches
-    the hash oracle results.
-
-    Args:
-        plan: Kurtosis plan object.
-        nodes: List of all node descriptors.
-        trafficgen_image: Docker image for trafficgen sidecar.
-        tx_count: Total number of transactions to generate.
-        tx_mix: Transaction type weights.
-
-    Returns:
-        Test results dict.
-    """
-    results = {}
-
-    # Wait for the network to be live first.
-    plan.print("Waiting for all nodes to reach closed_seq >= 3...")
-    for node in nodes:
-        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
-
-    # Find a rippled node to use as the submit target (more reliable for signing).
-    rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
-    submit_node = rippled_nodes[0] if len(rippled_nodes) > 0 else nodes[0]
-
-    # Launch the trafficgen sidecar.
-    plan.print("Launching trafficgen sidecar (tx_count={}, mix={})...".format(tx_count, tx_mix))
-    trafficgen.launch(
-        plan,
-        all_nodes = nodes,
-        submit_node = submit_node,
-        image = trafficgen_image,
-        tx_count = tx_count,
-        tx_mix = tx_mix,
-    )
-
-    # Wait for the trafficgen to complete.
-    plan.print("Waiting for trafficgen to complete (timeout 600s)...")
-    plan.wait(
-        service_name = "trafficgen",
-        recipe = GetHttpRequestRecipe(
-            port_id = "results",
-            endpoint = "/status",
-            extract = {"status": ".status"},
-        ),
-        field = "extract.status",
-        assertion = "==",
-        target_value = "completed",
-        timeout = "600s",
-        interval = "5s",
-    )
-
-    # Fetch and log the full results.
-    plan.print("=== Trafficgen results ===")
-    plan.request(
-        service_name = "trafficgen",
-        recipe = GetHttpRequestRecipe(
-            port_id = "results",
-            endpoint = "/results",
-        ),
-    )
-
-    results["soak"] = "completed"
     return results
 
 

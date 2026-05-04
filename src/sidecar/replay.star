@@ -5,7 +5,7 @@ def launch(
     plan,
     all_nodes,
     submit_node,
-    image = "trafficgen:latest",
+    image = "xrpl-confluence-sidecar:latest",
     mainnet_url = "https://s1.ripple.com:51234",
     ledger_start = 80000000,
     ledger_end = 80000010,
@@ -19,7 +19,7 @@ def launch(
         plan: Kurtosis plan object.
         all_nodes: List of all node descriptors.
         submit_node: Node descriptor to submit transactions to.
-        image: Docker image containing /fuzz binary (default "trafficgen:latest").
+        image: Docker image containing /fuzz binary (default "xrpl-confluence-sidecar:latest").
         mainnet_url: Public rippled JSON-RPC endpoint to fetch ledgers from.
         ledger_start: First mainnet ledger index to replay (inclusive).
         ledger_end: Last mainnet ledger index to replay (inclusive).

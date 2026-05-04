@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Build the trafficgen sidecar Docker image.
+# Build the xrpl-confluence sidecar Docker image.
 #
 # Usage:
 #   ./scripts/build-sidecar.sh [IMAGE_TAG]
 #
-# Default tag: trafficgen:latest
+# Default tag: xrpl-confluence-sidecar:latest
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SIDECAR_DIR="$SCRIPT_DIR/../sidecar"
-IMAGE_TAG="${1:-trafficgen:latest}"
+IMAGE_TAG="${1:-xrpl-confluence-sidecar:latest}"
 
-echo "Building trafficgen sidecar image: $IMAGE_TAG"
+echo "Building sidecar image: $IMAGE_TAG"
 docker build -t "$IMAGE_TAG" "$SIDECAR_DIR"
 echo "Done: $IMAGE_TAG"
