@@ -141,7 +141,9 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		}
 		if cfg.RotateEvery > 0 && atomic.LoadInt64(&stats.TxsSucceeded)%cfg.RotateEvery == 0 {
 			log.Printf("soak: rotating account tiers at %d successes", stats.TxsSucceeded)
-			// TODO C2: rotate account tiers via accounts.RotateTiers(submit, pool, rng.Rand())
+			if err := accounts.RotateTiers(submit, pool, rng.Rand()); err != nil {
+				log.Printf("soak: rotate: %v", err)
+			}
 		}
 	}
 }

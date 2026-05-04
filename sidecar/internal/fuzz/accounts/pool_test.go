@@ -66,3 +66,8 @@ func TestPool_PickTwoDistinct_PanicsWhenTooSmall(t *testing.T) {
 	}()
 	p.PickTwoDistinct(rng.Rand())
 }
+
+func TestRotateTiers_RecyclesXRP(t *testing.T) {
+	t.Skip("M1 ships rich-only; rotation is a no-op stub here. " +
+		"Replace this skip when M2/M3 add multiple tiers.")
+}

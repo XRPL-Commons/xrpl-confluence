@@ -3,6 +3,8 @@ package accounts
 import (
 	"fmt"
 	mathrand "math/rand/v2"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
 
 // Pool is a deterministic set of funded accounts. M1 ships a single rich
@@ -51,4 +53,22 @@ func (p *Pool) PickTwoDistinct(r *mathrand.Rand) (*Wallet, *Wallet) {
 			return a, b
 		}
 	}
+}
+
+// RotateTiers walks the pool and submits a no-op self-AccountSet for each
+// wallet, refreshing per-account state on every node and exercising the
+// sequence-advance path. Future versions will move XRP between tiers; the
+// M1 pool is rich-only, so this is a pacing tick.
+func RotateTiers(submit *rpcclient.Client, pool *Pool, rng *mathrand.Rand) error {
+	_ = rng // unused while pool is rich-only; kept in signature for future rotation logic.
+	for _, w := range pool.All() {
+		_, err := submit.SubmitTxJSON(w.Seed, map[string]any{
+			"TransactionType": "AccountSet",
+			"Account":         w.ClassicAddress,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
