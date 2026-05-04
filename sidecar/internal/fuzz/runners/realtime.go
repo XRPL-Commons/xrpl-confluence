@@ -69,6 +69,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	stats.Seed = cfg.Seed
 
 	var poller *crash.Poller
+	var hang *crash.HangDetector
 	if cfg.CrashRuntime != nil && cfg.CrashLabelVal != "" {
 		tail := cfg.CrashTailLines
 		if tail == 0 {
@@ -88,6 +89,20 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					"log_tail":    e.LogTail,
 				},
 			})
+		}
+		hang = crash.NewHangDetector(60)
+		hang.Match = func(name string) bool { return strings.HasPrefix(name, "goxrpl-") }
+		hang.Liveness = func(ctx context.Context, name string) (int64, error) {
+			for _, n := range nodes {
+				if n.Name == name {
+					info, err := n.Client.ServerInfo()
+					if err != nil {
+						return 0, err
+					}
+					return int64(info.Validated.Seq), nil
+				}
+			}
+			return 0, fmt.Errorf("unknown node %q", name)
 		}
 	}
 
@@ -226,6 +241,14 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		// Periodically run layer-1 oracle.
 		if cfg.BatchClose > 0 && i%10 == 9 {
 			time.Sleep(cfg.BatchClose)
+			if hang != nil {
+				for _, n := range nodes {
+					if hang.Step(ctx, n.Name) {
+						log.Printf("realtime: container %s appears hung — SIGQUIT", n.Name)
+						_ = cfg.CrashRuntime.SendSignal(ctx, n.Name, "QUIT")
+					}
+				}
+			}
 			if poller != nil {
 				_ = poller.Tick(ctx)
 			}

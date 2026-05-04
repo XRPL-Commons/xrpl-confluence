@@ -104,3 +104,20 @@ func TestNewDockerRuntime_PingFailure(t *testing.T) {
 		t.Fatalf("error %q does not mention ping", msg)
 	}
 }
+
+func TestHangDetector_FiresAfterStaleTicks(t *testing.T) {
+	h := NewHangDetector(3)
+	h.Match = func(name string) bool { return name == "goxrpl-0" }
+	h.Liveness = func(_ context.Context, _ string) (int64, error) { return 100, nil }
+	for i := 0; i < 2; i++ {
+		if h.Step(context.Background(), "goxrpl-0") {
+			t.Fatalf("fired too early at i=%d", i)
+		}
+	}
+	if !h.Step(context.Background(), "goxrpl-0") {
+		t.Fatal("expected fire on third stale tick")
+	}
+	if h.Step(context.Background(), "goxrpl-0") {
+		t.Fatal("must not fire twice")
+	}
+}
