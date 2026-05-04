@@ -4,8 +4,9 @@
 //
 // MODE switches the binary between "fuzz" (default, synthetic generator),
 // "replay" (mainnet tx-shape replay), "reproduce" (replay a saved run log),
-// and "shrink" (single-probe shrinker — replay a prefix and check whether the
-// original divergence reproduces). Replay adds these env vars:
+// "shrink" (single-probe shrinker — replay a prefix and check whether the
+// original divergence reproduces), and "soak" (unbounded fuzz with optional
+// rate limiting and account-tier rotation). Replay adds these env vars:
 //
 //	MAINNET_URL          — public rippled JSON-RPC (default https://s1.ripple.com:51234)
 //	REPLAY_LEDGER_START  — first ledger to replay (required in replay mode)
@@ -22,6 +23,11 @@
 //	SHRINK_MAX_STEP         — inclusive prefix cap on RunLogEntry.Step (required, >= 0)
 //	SHRINK_RETRIES          — extra in-probe re-checks before concluding "no match" (default 0)
 //	SHRINK_VALIDATE_TIMEOUT — per-tx wait for validated:true on every node (default 60s)
+//
+// soak mode:
+//
+//	TX_RATE    — submissions per second; 0 = uncapped (default 0)
+//	ROTATE_EVERY — tx successes between account-pool tier rotations (default 1000)
 //
 // Common environment variables:
 //
@@ -136,8 +142,25 @@ func main() {
 		blob, _ := json.MarshalIndent(res, "", "  ")
 		log.Printf("shrink: done\n%s", blob)
 
+	case "soak":
+		cfg, err := loadSoakConfig()
+		if err != nil {
+			log.Fatalf("soak config: %v", err)
+		}
+		log.Printf("soak: seed=%d nodes=%d submit=%s rate=%.2f rotate_every=%d",
+			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxRate, cfg.RotateEvery)
+		stats, err := runners.SoakRun(ctx, *cfg)
+		if err != nil {
+			log.Fatalf("soak: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(stats, "", "  ")
+		log.Printf("soak: done\n%s", blob)
+
 	default:
-		log.Fatalf("unknown MODE %q (want fuzz, replay, reproduce, or shrink)", mode)
+		log.Fatalf("unknown MODE %q (want fuzz, replay, reproduce, shrink, or soak)", mode)
 	}
 
 	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
@@ -312,6 +335,20 @@ func loadShrinkConfig() (*runners.ShrinkConfig, error) {
 		Retries:         envInt("SHRINK_RETRIES", 0),
 		CorpusDir:       envDefault("CORPUS_DIR", "/output/corpus"),
 		ValidateTimeout: envDuration("SHRINK_VALIDATE_TIMEOUT", 60*time.Second),
+	}, nil
+}
+
+func loadSoakConfig() (*runners.SoakConfig, error) {
+	base, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	rate := envFloat("TX_RATE", 0)
+	rotate, _ := strconv.ParseInt(envDefault("ROTATE_EVERY", "1000"), 10, 64)
+	return &runners.SoakConfig{
+		Config:      *base,
+		TxRate:      rate,
+		RotateEvery: rotate,
 	}, nil
 }
 
