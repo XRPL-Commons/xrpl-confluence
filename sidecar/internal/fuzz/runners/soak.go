@@ -7,11 +7,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/generator"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/oracle"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
@@ -72,6 +74,48 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 
 	var stats Stats
 	stats.Seed = cfg.Seed
+
+	var poller *crash.Poller
+	var hang *crash.HangDetector
+	if cfg.CrashRuntime != nil && cfg.CrashLabelVal != "" {
+		tail := cfg.CrashTailLines
+		if tail == 0 {
+			tail = 200
+		}
+		poller = crash.NewPoller(cfg.CrashRuntime, cfg.CrashLabelKey, cfg.CrashLabelVal, tail)
+		poller.OnCrash = func(e *crash.Event) {
+			atomic.AddInt64(&stats.Divergences, 1)
+			_ = rec.RecordDivergence(&corpus.Divergence{
+				Kind:        "crash",
+				Description: fmt.Sprintf("%s exited %d (%s)", e.Container, e.ExitCode, e.Kind),
+				Details: map[string]any{
+					"container":   e.Container,
+					"exit_code":   e.ExitCode,
+					"crash_kind":  e.Kind,
+					"marker_line": e.MarkerLine,
+					"log_tail":    e.LogTail,
+				},
+			})
+			if cfg.Metrics != nil {
+				cfg.Metrics.Crashes.WithLabelValues(e.Container, e.Kind).Inc()
+				cfg.Metrics.Divergences.WithLabelValues("crash").Inc()
+			}
+		}
+		hang = crash.NewHangDetector(60)
+		hang.Match = func(name string) bool { return strings.HasPrefix(name, "goxrpl-") }
+		hang.Liveness = func(ctx context.Context, name string) (int64, error) {
+			for _, n := range nodes {
+				if n.Name == name {
+					info, err := n.Client.ServerInfo()
+					if err != nil {
+						return 0, err
+					}
+					return int64(info.Validated.Seq), nil
+				}
+			}
+			return 0, fmt.Errorf("unknown node %q", name)
+		}
+	}
 
 	var ticker *time.Ticker
 	if cfg.TxRate > 0 {
@@ -156,6 +200,15 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 			}
 		}
 		if step%10 == 9 {
+			if poller != nil {
+				for _, n := range nodes {
+					if hang.Step(ctx, n.Name) {
+						log.Printf("soak: container %s appears hung — SIGQUIT", n.Name)
+						_ = cfg.CrashRuntime.SendSignal(ctx, n.Name, "QUIT")
+					}
+				}
+				_ = poller.Tick(ctx)
+			}
 			if cfg.Metrics != nil {
 				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "divergences")); err == nil {
 					cfg.Metrics.CorpusSize.Set(float64(len(entries)))
