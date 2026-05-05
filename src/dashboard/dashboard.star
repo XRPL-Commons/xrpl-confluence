@@ -40,7 +40,7 @@ def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
 
     # Poll cadence can now be slower — the latency-sensitive ledger-flip
     # field arrives over WS. Keep 5s for peers/state which are coarse.
-    config_content = '{{"nodes":[{}],"poll_interval_ms":5000}}'.format(",".join(nodes_json))
+    config_content = '{{"nodes":[{}],"poll_interval_ms":5000,"fuzz_metrics_url":"http://fuzz-soak:8081/metrics"}}'.format(",".join(nodes_json))
 
     config_artifact = plan.render_templates(
         name = "dashboard-config",

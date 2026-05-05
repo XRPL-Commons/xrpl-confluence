@@ -657,3 +657,74 @@ header {
   color: var(--text-dim);
   font-size: 12px;
 }
+
+/* Fuzzer panel */
+#fuzz-panel {
+  margin-bottom: 40px;
+}
+
+#fuzz-panel .fuzz-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+#fuzz-panel .kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+
+#fuzz-panel .kpi .label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+#fuzz-panel .kpi .value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+#fuzz-by-layer {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+#fuzz-by-layer th,
+#fuzz-by-layer td {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+#fuzz-by-layer th {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+}
+
+#fuzz-by-layer td {
+  color: var(--text);
+}
+
+#fuzz-by-layer tr:last-child td {
+  border-bottom: none;
+}
+
+#fuzz-by-layer tbody tr:hover td {
+  background: var(--bg-card-hover);
+}

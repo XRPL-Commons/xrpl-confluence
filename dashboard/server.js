@@ -20,7 +20,7 @@ const MIME = {
   ".svg": "image/svg+xml",
 };
 
-let config = { nodes: [], poll_interval_ms: 5000 };
+let config = { nodes: [], poll_interval_ms: 5000, fuzz_metrics_url: "" };
 let nodeStates = {};
 // Rolling log of raw server_info responses per node (last 100 entries).
 let nodeLogs = {};
@@ -42,6 +42,56 @@ function loadConfig() {
   } catch (e) {
     console.error("Failed to load config:", e.message);
   }
+}
+
+function fetchText(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      { hostname: u.hostname, port: u.port, path: u.pathname, method: "GET", timeout: timeoutMs },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve(data));
+      }
+    );
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("Timeout")); });
+    req.end();
+  });
+}
+
+function parseFuzzMetrics(text) {
+  const out = {
+    txs_submitted_total: 0,
+    txs_applied_total: 0,
+    divergences_total: 0,
+    divergences_total_by_layer: {},
+    crashes_total: 0,
+    accounts_active: 0,
+    corpus_size: 0,
+    current_seed: 0,
+  };
+  for (const line of text.split("\n")) {
+    if (!line || line.startsWith("#")) continue;
+    const m = line.match(/^(fuzz_[a-z_]+)(\{[^}]*\})?\s+(\S+)$/);
+    if (!m) continue;
+    const [, name, labelsRaw, valueRaw] = m;
+    const value = Number(valueRaw);
+    if (!Number.isFinite(value)) continue;
+    if (name === "fuzz_txs_submitted_total") out.txs_submitted_total += value;
+    else if (name === "fuzz_txs_applied_total") out.txs_applied_total += value;
+    else if (name === "fuzz_divergences_total") {
+      out.divergences_total += value;
+      const layer = (labelsRaw && labelsRaw.match(/layer="([^"]+)"/)) || [];
+      if (layer[1]) out.divergences_total_by_layer[layer[1]] = (out.divergences_total_by_layer[layer[1]] || 0) + value;
+    }
+    else if (name === "fuzz_crashes_total") out.crashes_total += value;
+    else if (name === "fuzz_accounts_active") out.accounts_active = value;
+    else if (name === "fuzz_corpus_size") out.corpus_size = value;
+    else if (name === "fuzz_current_seed") out.current_seed = value;
+  }
+  return out;
 }
 
 function rpcCall(rpcUrl, method) {
@@ -276,6 +326,24 @@ const server = http.createServer((req, res) => {
       state: nodeStates[name] || null,
       logs: nodeLogs[name] || [],
     }));
+    return;
+  }
+
+  if (req.url === "/api/fuzz") {
+    if (!config.fuzz_metrics_url) {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    fetchText(config.fuzz_metrics_url, 3000)
+      .then((txt) => {
+        res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+        res.end(JSON.stringify(parseFuzzMetrics(txt)));
+      })
+      .catch((e) => {
+        res.writeHead(502, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+        res.end(JSON.stringify({ error: e.message }));
+      });
     return;
   }
 

@@ -446,6 +446,31 @@
         : "-";
   }
 
+  // ── Fuzzer panel ──
+
+  async function pollFuzz() {
+    try {
+      const r = await fetch("/api/fuzz");
+      if (r.status === 204) return;
+      if (!r.ok) return;
+      const data = await r.json();
+      document.getElementById("fuzz-submitted").textContent = data.txs_submitted_total ?? "—";
+      document.getElementById("fuzz-applied").textContent = data.txs_applied_total ?? "—";
+      document.getElementById("fuzz-divergences").textContent = data.divergences_total ?? "—";
+      document.getElementById("fuzz-crashes").textContent = data.crashes_total ?? "—";
+      document.getElementById("fuzz-seed").textContent = data.current_seed ?? "—";
+      const tbody = document.querySelector("#fuzz-by-layer tbody");
+      tbody.innerHTML = "";
+      for (const [layer, count] of Object.entries(data.divergences_total_by_layer ?? {})) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${layer}</td><td>${count}</td>`;
+        tbody.appendChild(tr);
+      }
+    } catch (_) {
+      // panel stays at "—" until the sidecar comes up.
+    }
+  }
+
   // ── Init ──
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -454,5 +479,8 @@
 
     // Close button for log panel
     document.getElementById("log-panel-close").addEventListener("click", deselectNode);
+
+    setInterval(pollFuzz, 5000);
+    pollFuzz();
   });
 })();

@@ -78,6 +78,22 @@
       </div>
     </div>
 
+    <!-- Fuzzer panel -->
+    <section id="fuzz-panel">
+      <div class="section-title">Fuzzer</div>
+      <div class="fuzz-grid">
+        <div class="kpi"><div class="label">Submitted</div><div id="fuzz-submitted" class="value">—</div></div>
+        <div class="kpi"><div class="label">Applied</div><div id="fuzz-applied" class="value">—</div></div>
+        <div class="kpi"><div class="label">Divergences</div><div id="fuzz-divergences" class="value">—</div></div>
+        <div class="kpi"><div class="label">Crashes</div><div id="fuzz-crashes" class="value">—</div></div>
+        <div class="kpi"><div class="label">Seed</div><div id="fuzz-seed" class="value">—</div></div>
+      </div>
+      <table id="fuzz-by-layer">
+        <thead><tr><th>Layer</th><th>Divergences</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
   </div>
   <script src="/app.js"></script>
 </body>
