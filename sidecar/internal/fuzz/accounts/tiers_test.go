@@ -105,3 +105,30 @@ func TestSetupAtReserve_SubmitsPaymentToTreasury(t *testing.T) {
 		t.Errorf("destination = %v, want %s", tx["Destination"], GenesisAddress)
 	}
 }
+
+func TestSetupMultisig_InstallsSignerList(t *testing.T) {
+	w := &Wallet{Index: 0, ClassicAddress: "rTest", Seed: "sTest", Tier: Multisig}
+	signers := []*Wallet{
+		{Index: 1, ClassicAddress: "rA", Seed: "sA"},
+		{Index: 2, ClassicAddress: "rB", Seed: "sB"},
+		{Index: 3, ClassicAddress: "rC", Seed: "sC"},
+	}
+	stub := &stubSubmit{}
+	if err := setupMultisig(stub, w, signers); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.calls) != 1 {
+		t.Fatalf("submit calls = %d, want 1", len(stub.calls))
+	}
+	tx := stub.calls[0]
+	if tx["TransactionType"] != "SignerListSet" {
+		t.Errorf("tx_type = %v, want SignerListSet", tx["TransactionType"])
+	}
+	if tx["SignerQuorum"] != uint32(2) {
+		t.Errorf("quorum = %v, want 2", tx["SignerQuorum"])
+	}
+	entries, ok := tx["SignerEntries"].([]map[string]any)
+	if !ok || len(entries) != 3 {
+		t.Errorf("entries = %+v, want 3", tx["SignerEntries"])
+	}
+}

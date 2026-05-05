@@ -137,6 +137,31 @@ func setupAtReserve(s submitter, w *Wallet) error {
 	return err
 }
 
+// setupMultisig installs a 3-of-quorum-2 SignerListSet on w using the given
+// signer wallets' classic addresses. Master key remains enabled so the wallet
+// can still sign single-sig — multisig is in addition, not replacement.
+func setupMultisig(s submitter, w *Wallet, signers []*Wallet) error {
+	if len(signers) < 3 {
+		return fmt.Errorf("multisig: need >= 3 signers, got %d", len(signers))
+	}
+	entries := make([]map[string]any, 0, 3)
+	for _, sg := range signers[:3] {
+		entries = append(entries, map[string]any{
+			"SignerEntry": map[string]any{
+				"Account":      sg.ClassicAddress,
+				"SignerWeight": uint32(1),
+			},
+		})
+	}
+	_, err := s.SubmitTxJSON(w.Seed, map[string]any{
+		"TransactionType": "SignerListSet",
+		"Account":         w.ClassicAddress,
+		"SignerQuorum":    uint32(2),
+		"SignerEntries":   entries,
+	})
+	return err
+}
+
 // parseDrops parses an XRPL balance string (decimal drops as string) into int64.
 func parseDrops(s string) (int64, error) {
 	var n int64
