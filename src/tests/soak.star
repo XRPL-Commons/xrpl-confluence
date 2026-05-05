@@ -78,4 +78,11 @@ def run(plan, nodes, args = {}):
     plan.print("fuzz-soak service is up. Corpus accumulates in persistent volume 'fuzz-soak-output' at /output/corpus.")
     plan.print("Leave the enclave running; tear down with `kurtosis enclave rm <enclave>` or `make soak-down`.")
 
+    if args.get("enable_observability", False):
+        prom = import_module("../sidecar/prometheus.star")
+        graf = import_module("../sidecar/grafana.star")
+        prom.launch(plan, fuzz_service_name = "fuzz-soak")
+        graf.launch(plan, prometheus_service_name = "prometheus")
+        plan.print("observability: prometheus on :9090, grafana on :3000 (anonymous viewer)")
+
     return {"fuzz-soak": svc}
