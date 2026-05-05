@@ -132,3 +132,26 @@ func TestSetupMultisig_InstallsSignerList(t *testing.T) {
 		t.Errorf("entries = %+v, want 3", tx["SignerEntries"])
 	}
 }
+
+func TestSetupRegularKey_SetsKeyThenDisablesMaster(t *testing.T) {
+	w := &Wallet{Index: 0, ClassicAddress: "rTest", Seed: "sTest", Tier: RegularKey}
+	stub := &stubSubmit{}
+	if err := setupRegularKey(stub, w, "rRegKey"); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.calls) != 2 {
+		t.Fatalf("submit calls = %d, want 2 (SetRegularKey + AccountSet)", len(stub.calls))
+	}
+	if stub.calls[0]["TransactionType"] != "SetRegularKey" {
+		t.Errorf("call[0] = %v, want SetRegularKey", stub.calls[0]["TransactionType"])
+	}
+	if stub.calls[0]["RegularKey"] != "rRegKey" {
+		t.Errorf("RegularKey = %v, want rRegKey", stub.calls[0]["RegularKey"])
+	}
+	if stub.calls[1]["TransactionType"] != "AccountSet" {
+		t.Errorf("call[1] = %v, want AccountSet", stub.calls[1]["TransactionType"])
+	}
+	if stub.calls[1]["SetFlag"] != uint32(4) {
+		t.Errorf("SetFlag = %v, want 4 (asfDisableMaster)", stub.calls[1]["SetFlag"])
+	}
+}

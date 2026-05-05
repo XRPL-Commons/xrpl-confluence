@@ -162,6 +162,31 @@ func setupMultisig(s submitter, w *Wallet, signers []*Wallet) error {
 	return err
 }
 
+// asfDisableMaster is the AccountSet flag that disables the master keypair.
+// After it lands, the master seed can no longer sign tx — regular key only.
+const asfDisableMaster = uint32(4)
+
+// setupRegularKey installs a RegularKey then disables the master. ORDER
+// MATTERS: disabling the master before installing a regular key would lock
+// the account out forever.
+func setupRegularKey(s submitter, w *Wallet, regKeyAddr string) error {
+	if _, err := s.SubmitTxJSON(w.Seed, map[string]any{
+		"TransactionType": "SetRegularKey",
+		"Account":         w.ClassicAddress,
+		"RegularKey":      regKeyAddr,
+	}); err != nil {
+		return fmt.Errorf("regkey: SetRegularKey %s: %w", w.ClassicAddress, err)
+	}
+	if _, err := s.SubmitTxJSON(w.Seed, map[string]any{
+		"TransactionType": "AccountSet",
+		"Account":         w.ClassicAddress,
+		"SetFlag":         asfDisableMaster,
+	}); err != nil {
+		return fmt.Errorf("regkey: disable-master %s: %w", w.ClassicAddress, err)
+	}
+	return nil
+}
+
 // parseDrops parses an XRPL balance string (decimal drops as string) into int64.
 func parseDrops(s string) (int64, error) {
 	var n int64
