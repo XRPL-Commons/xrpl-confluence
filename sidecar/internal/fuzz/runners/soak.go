@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -98,19 +100,27 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			continue
 		}
+		txMode := "valid"
 		if cfg.MutationRate > 0 {
 			if mutated, did := gen.Mutator().Maybe(rng.Rand(), tx, cfg.MutationRate); did {
 				tx = mutated
+				txMode = "mutated"
 				atomic.AddInt64(&stats.TxsMutated, 1)
 			}
 		}
 		atomic.AddInt64(&stats.TxsSubmitted, 1)
+		if cfg.Metrics != nil {
+			cfg.Metrics.TxsSubmitted.WithLabelValues(tx.TransactionType(), txMode).Inc()
+		}
 		res, err := submit.SubmitTxJSON(tx.Secret, tx.Fields)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)
+		if cfg.Metrics != nil {
+			cfg.Metrics.TxsApplied.WithLabelValues(tx.TransactionType(), res.EngineResult).Inc()
+		}
 		_ = txLog.Append(&corpus.RunLogEntry{
 			Step:   step,
 			TxType: tx.TransactionType(),
@@ -129,6 +139,9 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s disagreed", res.TxHash),
 					Details:     map[string]any{"tx_hash": res.TxHash, "node_results": cmp.NodeResults},
 				})
+				if cfg.Metrics != nil {
+					cfg.Metrics.Divergences.WithLabelValues("tx_result").Inc()
+				}
 			}
 			if meta := orc.CompareTxMetadata(ctx, res.TxHash); !meta.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
@@ -137,6 +150,16 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
 					Details:     map[string]any{"tx_hash": res.TxHash, "node_meta": meta.NodeMeta},
 				})
+				if cfg.Metrics != nil {
+					cfg.Metrics.Divergences.WithLabelValues("metadata").Inc()
+				}
+			}
+		}
+		if step%10 == 9 {
+			if cfg.Metrics != nil {
+				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "divergences")); err == nil {
+					cfg.Metrics.CorpusSize.Set(float64(len(entries)))
+				}
 			}
 		}
 		if cfg.RotateEvery > 0 && atomic.LoadInt64(&stats.TxsSucceeded)%cfg.RotateEvery == 0 {

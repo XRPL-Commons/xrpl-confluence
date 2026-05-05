@@ -58,6 +58,7 @@ import (
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/metrics"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/runners"
 )
 
@@ -65,10 +66,12 @@ func main() {
 	flag.Parse()
 	mode := envDefault("MODE", "fuzz")
 
+	mreg := metrics.New()
+
 	var statsMu sync.RWMutex
 	var currentStats *runners.Stats
 	var currentShrink *runners.ShrinkResult
-	go serveHTTP(&statsMu, &currentStats, &currentShrink)
+	go serveHTTP(mreg, &statsMu, &currentStats, &currentShrink)
 
 	ctx := context.Background()
 
@@ -78,6 +81,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("config: %v", err)
 		}
+		mreg.CurrentSeed.Set(float64(cfg.Seed))
+		mreg.AccountsActive.Set(float64(cfg.AccountN))
+		cfg.Metrics = mreg
 		log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s mutation_rate=%.2f",
 			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir, cfg.MutationRate)
 		stats, err := runners.Run(ctx, *cfg)
@@ -147,6 +153,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("soak config: %v", err)
 		}
+		mreg.CurrentSeed.Set(float64(cfg.Seed))
+		mreg.AccountsActive.Set(float64(cfg.AccountN))
+		cfg.Metrics = mreg
 		log.Printf("soak: seed=%d nodes=%d submit=%s rate=%.2f rotate_every=%d",
 			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxRate, cfg.RotateEvery)
 		stats, err := runners.SoakRun(ctx, *cfg)
@@ -394,7 +403,7 @@ type statusResponse struct {
 	Shrink *runners.ShrinkResult `json:"shrink,omitempty"`
 }
 
-func serveHTTP(mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult) {
+func serveHTTP(mreg *metrics.Registry, mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
@@ -409,6 +418,7 @@ func serveHTTP(mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	mux.Handle("/metrics", mreg.Handler())
 	log.Println("HTTP results server on :8081")
 	if err := http.ListenAndServe(":8081", mux); err != nil {
 		log.Printf("http: %v", err)

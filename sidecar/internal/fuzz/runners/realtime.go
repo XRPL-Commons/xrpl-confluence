@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/generator"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/metrics"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/oracle"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
@@ -38,6 +41,9 @@ type Config struct {
 	CrashLabelKey  string // e.g. "fuzzer.role"
 	CrashLabelVal  string // e.g. "node"
 	CrashTailLines int    // log lines to capture on crash (default 200)
+	// Metrics, when non-nil, receives counter increments on submission,
+	// applied result, divergence, and crash events. Nil disables all metrics.
+	Metrics *metrics.Registry
 }
 
 // Stats summarises one run.
@@ -89,6 +95,10 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					"log_tail":    e.LogTail,
 				},
 			})
+			if cfg.Metrics != nil {
+				cfg.Metrics.Crashes.WithLabelValues(e.Container, e.Kind).Inc()
+				cfg.Metrics.Divergences.WithLabelValues("crash").Inc()
+			}
 		}
 		hang = crash.NewHangDetector(60)
 		hang.Match = func(name string) bool { return strings.HasPrefix(name, "goxrpl-") }
@@ -168,14 +178,19 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			continue
 		}
 
+		txMode := "valid"
 		if cfg.MutationRate > 0 {
 			if mutated, didMutate := gen.Mutator().Maybe(rng.Rand(), tx, cfg.MutationRate); didMutate {
 				tx = mutated
+				txMode = "mutated"
 				atomic.AddInt64(&stats.TxsMutated, 1)
 			}
 		}
 
 		atomic.AddInt64(&stats.TxsSubmitted, 1)
+		if cfg.Metrics != nil {
+			cfg.Metrics.TxsSubmitted.WithLabelValues(tx.TransactionType(), txMode).Inc()
+		}
 		res, err := submitTx(submit, tx)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
@@ -187,6 +202,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)
+		if cfg.Metrics != nil {
+			cfg.Metrics.TxsApplied.WithLabelValues(tx.TransactionType(), res.EngineResult).Inc()
+		}
 		_ = txLog.Append(&corpus.RunLogEntry{
 			Step:   i,
 			TxType: tx.TransactionType(),
@@ -210,6 +228,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						"node_results": cmp.NodeResults,
 					},
 				})
+				if cfg.Metrics != nil {
+					cfg.Metrics.Divergences.WithLabelValues("tx_result").Inc()
+				}
 			}
 		}
 
@@ -227,6 +248,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						"node_meta": meta.NodeMeta,
 					},
 				})
+				if cfg.Metrics != nil {
+					cfg.Metrics.Divergences.WithLabelValues("metadata").Inc()
+				}
 			}
 		}
 
@@ -264,6 +288,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 							Description: fmt.Sprintf("ledger %d diverged", seq),
 							Details:     map[string]any{"comparison": cmp},
 						})
+						if cfg.Metrics != nil {
+							cfg.Metrics.Divergences.WithLabelValues("state_hash").Inc()
+						}
 					}
 				}
 				lastCompared = info.Validated.Seq
@@ -275,6 +302,14 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						Description: err.Error(),
 						Details:     map[string]any{"invariant": "pool_balance_monotone"},
 					})
+					if cfg.Metrics != nil {
+						cfg.Metrics.Divergences.WithLabelValues("invariant").Inc()
+					}
+				}
+			}
+			if cfg.Metrics != nil {
+				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "divergences")); err == nil {
+					cfg.Metrics.CorpusSize.Set(float64(len(entries)))
 				}
 			}
 		}
