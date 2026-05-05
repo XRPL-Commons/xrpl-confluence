@@ -62,6 +62,7 @@ def launch(
         "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
         "CRASH_LABEL_VAL":  "node",
         "CRASH_TAIL_LINES": "200",
+        "DOCKER_HOST":      "tcp://host.docker.internal:2375",
     }
     # NOTE: Kurtosis 1.x has no Starlark primitive for host-path bind mounts,
     # so the Docker socket cannot be injected via this launcher alone. Crash
@@ -185,6 +186,7 @@ def launch_soak(
                 "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
                 "CRASH_LABEL_VAL":  "node",
                 "CRASH_TAIL_LINES": "200",
+                "DOCKER_HOST":      "tcp://host.docker.internal:2375",
             },
         ),
     )
@@ -241,6 +243,7 @@ def launch_chaos(
                 "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
                 "CRASH_LABEL_VAL":  "node",
                 "CRASH_TAIL_LINES": "200",
+                "DOCKER_HOST":      "tcp://host.docker.internal:2375",
                 "CHAOS_SCHEDULE":   chaos_schedule,
             },
         ),

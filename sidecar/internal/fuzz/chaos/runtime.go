@@ -13,6 +13,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 )
@@ -105,10 +106,26 @@ func (d *DockerNetworkRuntime) Start(ctx context.Context, name string) error {
 	return d.cli.ContainerStart(ctx, cid, container.StartOptions{})
 }
 
+// resolveID maps a logical name (e.g. the Kurtosis service name "rippled-1")
+// to the actual Docker container ID. Kurtosis prefixes container names with
+// the enclave UUID, so a direct ContainerInspect on the bare service name
+// fails. Try the bare name first (works when the caller already passed a
+// real container name), then fall back to a name-prefix list lookup.
 func (d *DockerNetworkRuntime) resolveID(ctx context.Context, name string) (string, error) {
-	insp, err := d.cli.ContainerInspect(ctx, name)
-	if err != nil {
-		return "", fmt.Errorf("inspect %s: %w", name, err)
+	if insp, err := d.cli.ContainerInspect(ctx, name); err == nil {
+		return insp.ID, nil
 	}
-	return insp.ID, nil
+	args := filters.NewArgs()
+	args.Add("name", "^/?"+name+"--")
+	cs, err := d.cli.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	if err != nil {
+		return "", fmt.Errorf("list %s: %w", name, err)
+	}
+	if len(cs) == 0 {
+		return "", fmt.Errorf("no container matching %q (looked up bare name and Kurtosis-prefixed name--<uuid> pattern)", name)
+	}
+	if len(cs) > 1 {
+		return "", fmt.Errorf("multiple containers match %q (%d) — refusing to guess", name, len(cs))
+	}
+	return cs[0].ID, nil
 }
