@@ -25,9 +25,10 @@ def run(plan, args = {}):
             - goxrpl_count: Number of goXRPL nodes (default: 1).
             - rippled_image: Docker image for rippled (default: "rippleci/rippled:2.6.2").
             - goxrpl_image: Docker image for goXRPL (default: "goxrpl:latest").
-            - test_suite: Which test suite to run: "all", "propagation", "sync", "consensus", "soak", "delayed_sync", "fuzz", "replay", "shrink" (default: "all").
+            - test_suite: Which test suite to run: "all", "propagation", "sync", "consensus", "soak", "delayed_sync", "fuzz", "replay", "shrink", "chaos" (default: "all").
             - shrink_args: For test_suite == "shrink": dict with shrink_artifact, shrink_max_step, optionally seed/accounts/validate_timeout.
             - soak_args: For test_suite == "soak": dict with tx_rate, rotate_every, mutation_rate, accounts, corpus_host_path.
+            - chaos_args: For test_suite == "chaos": dict with schedule (JSON string, required), tx_rate, rotate_every, mutation_rate, accounts.
     """
     rippled_count = args.get("rippled_count", DEFAULT_RIPPLED_COUNT)
     goxrpl_count = args.get("goxrpl_count", DEFAULT_GOXRPL_COUNT)

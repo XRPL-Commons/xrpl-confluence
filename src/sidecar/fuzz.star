@@ -188,3 +188,60 @@ def launch_soak(
             },
         ),
     )
+
+
+def launch_chaos(
+    plan,
+    all_nodes,
+    submit_node,
+    chaos_schedule,
+    tx_rate = 0,
+    rotate_every = 1000,
+    mutation_rate = 0.0,
+    accounts = 50):
+    """Launch the fuzz sidecar in chaos mode.
+
+    Same wiring as launch_soak plus CHAOS_SCHEDULE (JSON string). The
+    sidecar mounts the persistent volume `fuzz-chaos-output` at
+    /output. Crash detection requires the host to forward
+    /var/run/docker.sock into the enclave (Linux) or run a
+    docker-socket-proxy (macOS); without that the chaos events
+    NetworkRuntime construction fails fast and the runner logs
+    "chaos: NetworkRuntime disabled".
+    """
+    node_urls = ",".join(["http://{}:5005".format(n["name"]) for n in all_nodes])
+    submit_url = "http://{}:5005".format(submit_node["name"])
+
+    files = {
+        "/output": Directory(persistent_key = "fuzz-chaos-output"),
+    }
+
+    return plan.add_service(
+        name = "fuzz-chaos",
+        config = ServiceConfig(
+            image = "xrpl-confluence-sidecar:latest",
+            entrypoint = ["/fuzz"],
+            ports = {
+                "results": PortSpec(
+                    number = 8081,
+                    transport_protocol = "TCP",
+                    application_protocol = "http",
+                ),
+            },
+            files = files,
+            env_vars = {
+                "MODE":             "chaos",
+                "NODES":            node_urls,
+                "SUBMIT_URL":       submit_url,
+                "ACCOUNTS":         str(accounts),
+                "TX_RATE":          str(tx_rate),
+                "ROTATE_EVERY":     str(rotate_every),
+                "MUTATION_RATE":    str(mutation_rate),
+                "CORPUS_DIR":       "/output/corpus",
+                "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
+                "CRASH_LABEL_VAL":  "node",
+                "CRASH_TAIL_LINES": "200",
+                "CHAOS_SCHEDULE":   chaos_schedule,
+            },
+        ),
+    )
