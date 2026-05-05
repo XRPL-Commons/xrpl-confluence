@@ -461,7 +461,9 @@
       document.getElementById("fuzz-seed").textContent = data.current_seed ?? "—";
       const tbody = document.querySelector("#fuzz-by-layer tbody");
       tbody.innerHTML = "";
-      for (const [layer, count] of Object.entries(data.divergences_total_by_layer ?? {})) {
+      const layerEntries = Object.entries(data.divergences_total_by_layer ?? {})
+        .sort(([a], [b]) => a.localeCompare(b));
+      for (const [layer, count] of layerEntries) {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${layer}</td><td>${count}</td>`;
         tbody.appendChild(tr);
