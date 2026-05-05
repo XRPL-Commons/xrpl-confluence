@@ -45,8 +45,15 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
     goxrpl_names = ["goxrpl-{}".format(i) for i in range(goxrpl_count)]
     all_names = rippled_names + goxrpl_names
 
-    # Collect all validator public keys
-    all_pubkeys = [VALIDATOR_KEYS[i]["pubkey"] for i in range(total)]
+    # The trusted UNL written into validators.txt/toml lists ONLY the rippled
+    # pubkeys. goXRPL still receives a validator key in its own config and emits
+    # validations, but those validations are not part of the trusted set used
+    # to compute quorum — so a goXRPL node failing to emit a validation cannot
+    # halt the network. Interop coverage is preserved via oracle layer 1
+    # (cross-node ledger-hash comparison) which fires every BatchClose tick
+    # regardless of UNL membership. Re-include goXRPL in the UNL once goXRPL-side
+    # validation emission is fixed (see issue filed against LeJamon/goXRPL).
+    rippled_pubkeys = [VALIDATOR_KEYS[i]["pubkey"] for i in range(rippled_count)]
 
     config_files = {}
 
@@ -57,6 +64,7 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
             index = i,
             node_key = VALIDATOR_KEYS[i],
             peers = peers,
+            rippled_count = rippled_count,
         )
 
     # Per-node goXRPL configs
@@ -69,9 +77,9 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
             peers = peers,
         )
 
-    # Shared validators files
-    config_files["validators.txt"] = _render_validators_txt(all_pubkeys)
-    config_files["validators.toml"] = _render_validators_toml(all_pubkeys)
+    # Shared validators files — rippled-only UNL (see comment above).
+    config_files["validators.txt"] = _render_validators_txt(rippled_pubkeys)
+    config_files["validators.toml"] = _render_validators_toml(rippled_pubkeys)
 
     return plan.render_templates(
         name = "network-config",
@@ -82,8 +90,17 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
     )
 
 
-def _render_rippled_config(index, node_key, peers):
-    """Render a complete rippled.cfg for a private test network node."""
+def _render_rippled_config(index, node_key, peers, rippled_count):
+    """Render a complete rippled.cfg for a private test network node.
+
+    The validation_quorum is sized for the rippled-only UNL (goXRPL is
+    intentionally excluded from validators.txt/toml — see generate_network_config).
+    Formula: floor(0.8 * rippled_count) + 1, matching rippled's default 80% rule.
+    """
+    quorum = (rippled_count * 8) // 10 + 1
+    if quorum < 1:
+        quorum = 1
+
     peers_section = ""
     for peer in peers:
         peers_section += "{} {}\n".format(peer, PEER_PORT)
@@ -138,6 +155,9 @@ tiny
 [network_id]
 {network_id}
 
+[validation_quorum]
+{quorum}
+
 [validation_seed]
 {seed}
 
@@ -164,6 +184,7 @@ pool.ntp.org
         ws_port = WS_PORT,
         peers = peers_section,
         network_id = NETWORK_ID,
+        quorum = quorum,
         seed = node_key["seed"],
     )
 
