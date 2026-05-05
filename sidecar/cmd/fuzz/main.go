@@ -397,15 +397,23 @@ func loadChaosConfig() (*runners.ChaosConfig, error) {
 		return nil, err
 	}
 	rt, dockerErr := chaos.NewDockerNetworkRuntime()
+	scheduleJSON := os.Getenv("CHAOS_SCHEDULE")
 	if dockerErr != nil {
-		log.Printf("chaos: NetworkRuntime disabled — docker dial failed: %v", dockerErr)
+		// chaos events panic on Apply with a nil-receiver method when
+		// rt is nil. Fail loud at startup if the operator asked for events
+		// but Docker isn't reachable — the alternative is a SIGSEGV crash
+		// the moment the first event fires.
+		if strings.TrimSpace(scheduleJSON) != "" && strings.TrimSpace(scheduleJSON) != "[]" {
+			return nil, fmt.Errorf("chaos: NetworkRuntime unavailable but CHAOS_SCHEDULE has events: %w", dockerErr)
+		}
+		log.Printf("chaos: NetworkRuntime disabled — docker dial failed: %v (schedule is empty, continuing)", dockerErr)
 		rt = nil
 	}
 	var asInterface chaos.NetworkRuntime
 	if rt != nil {
 		asInterface = rt
 	}
-	schedule, parseErr := chaos.ParseSchedule(os.Getenv("CHAOS_SCHEDULE"), asInterface)
+	schedule, parseErr := chaos.ParseSchedule(scheduleJSON, asInterface)
 	if parseErr != nil {
 		return nil, fmt.Errorf("CHAOS_SCHEDULE: %w", parseErr)
 	}
