@@ -352,6 +352,10 @@ func loadSoakConfig() (*runners.SoakConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SoakRun does not currently invoke the crash poller (no periodic block
+	// matching realtime's i%10==9 cadence). Drop CrashRuntime so we don't
+	// hold a Docker connection for nothing.
+	base.CrashRuntime = nil
 	rate := envFloat("TX_RATE", 0)
 	rotate, _ := strconv.ParseInt(envDefault("ROTATE_EVERY", "1000"), 10, 64)
 	return &runners.SoakConfig{
