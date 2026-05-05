@@ -14,6 +14,11 @@ VALIDATOR_KEYS = [
     {"seed": "sn8KuG4fs84rowCsqTuz6AtqEkmJ7", "pubkey": "n9KVs96MmgjXmok33PNEr29xbRAfvqvw1HqQYGsWE9zBdJMYJ9Pc"},
     {"seed": "sha6zPXQHAEwVk1qEREAxZPqy7h5Z", "pubkey": "n9KRLEqrFzXi5yK3XE6NUhcFx8XLHWZg3SczPb8doFCiryPSmvfr"},
     {"seed": "snPRr5dyXnYYZ4idydxHxhm2qnohc", "pubkey": "n9Jjt6fFpdTzms5tpYAf2iFyQwXNZWrQgwtrbwQEvFWQN4kfRFPb"},
+    {"seed": "saa7XDheiBUhj8uM57KW2VjBFNZ5C", "pubkey": "n94EazZJELsns1Kizfj88S9vxbaEkrMQzmxayzCnFnN3EpDUGUdK"},
+    {"seed": "ssjs6bcRJMiZEDMMBYUAZTbQfvvmk", "pubkey": "n9Kkh8kM1Hq79u3mYevtf5tA3yis5YEnzjJtqqBiDEaGwgYnjjcA"},
+    {"seed": "ssYZgL9h161e6d8LYU1huZiZ566hd", "pubkey": "n9KbfoZv1Br87TBbdNt5JJXidcYnRmZYVNbsrscB2taETRKxtcMw"},
+    {"seed": "spq3gv3ohNqg24wjaiCU4LG9CHUKV", "pubkey": "n9Ka23g3zJt52d6SVJAWAYyQqDM3r4fJ5AmFHHxdgsx5UHa9enL5"},
+    {"seed": "ssdUAKmoDAKzPmRGZs9E4VKyLYZb6", "pubkey": "n9KfqDFGG3QQdnUyvbwiUZ3vhx8FCrXfA5WEo2xqXD3TdvKX8i6g"},
 ]
 
 NETWORK_ID = 10000
