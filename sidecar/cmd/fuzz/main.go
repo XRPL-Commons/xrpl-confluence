@@ -5,8 +5,9 @@
 // MODE switches the binary between "fuzz" (default, synthetic generator),
 // "replay" (mainnet tx-shape replay), "reproduce" (replay a saved run log),
 // "shrink" (single-probe shrinker — replay a prefix and check whether the
-// original divergence reproduces), and "soak" (unbounded fuzz with optional
-// rate limiting and account-tier rotation). Replay adds these env vars:
+// original divergence reproduces), "soak" (unbounded fuzz with optional
+// rate limiting and account-tier rotation), and "chaos" (extends soak with
+// a deterministic chaos schedule). Replay adds these env vars:
 //
 //	MAINNET_URL          — public rippled JSON-RPC (default https://s1.ripple.com:51234)
 //	REPLAY_LEDGER_START  — first ledger to replay (required in replay mode)
@@ -29,6 +30,10 @@
 //	TX_RATE    — submissions per second; 0 = uncapped (default 0)
 //	ROTATE_EVERY — tx successes between account-pool tier rotations (default 1000)
 //
+// chaos mode (extends soak):
+//
+//	CHAOS_SCHEDULE — JSON array of chaos events; see chaos.ParseSchedule.
+//
 // Common environment variables:
 //
 //	NODES         — comma-separated node URLs for oracle observation (required)
@@ -48,6 +53,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -56,6 +62,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/chaos"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/metrics"
@@ -168,8 +175,31 @@ func main() {
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("soak: done\n%s", blob)
 
+	case "chaos":
+		cfg, err := loadChaosConfig()
+		if err != nil {
+			log.Fatalf("chaos config: %v", err)
+		}
+		mreg.CurrentSeed.Set(float64(cfg.Seed))
+		mreg.AccountsActive.Set(float64(cfg.AccountN))
+		cfg.Metrics = mreg
+		log.Printf("chaos: seed=%d nodes=%d submit=%s rate=%.2f rotate_every=%d events=%d",
+			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxRate, cfg.RotateEvery, len(cfg.Schedule))
+		stats, chaosStats, err := runners.ChaosRun(ctx, *cfg)
+		if err != nil {
+			log.Fatalf("chaos: %v", err)
+		}
+		statsMu.Lock()
+		currentStats = stats
+		statsMu.Unlock()
+		blob, _ := json.MarshalIndent(struct {
+			Soak  *runners.Stats `json:"soak"`
+			Chaos *chaos.Stats   `json:"chaos"`
+		}{stats, chaosStats}, "", "  ")
+		log.Printf("chaos: done\n%s", blob)
+
 	default:
-		log.Fatalf("unknown MODE %q (want fuzz, replay, reproduce, shrink, or soak)", mode)
+		log.Fatalf("unknown MODE %q (want fuzz, replay, reproduce, shrink, soak, or chaos)", mode)
 	}
 
 	// Keep HTTP server alive so Kurtosis can scrape the results endpoint.
@@ -358,6 +388,30 @@ func loadSoakConfig() (*runners.SoakConfig, error) {
 		Config:      *base,
 		TxRate:      rate,
 		RotateEvery: rotate,
+	}, nil
+}
+
+func loadChaosConfig() (*runners.ChaosConfig, error) {
+	soak, err := loadSoakConfig()
+	if err != nil {
+		return nil, err
+	}
+	rt, dockerErr := chaos.NewDockerNetworkRuntime()
+	if dockerErr != nil {
+		log.Printf("chaos: NetworkRuntime disabled — docker dial failed: %v", dockerErr)
+		rt = nil
+	}
+	var asInterface chaos.NetworkRuntime
+	if rt != nil {
+		asInterface = rt
+	}
+	schedule, parseErr := chaos.ParseSchedule(os.Getenv("CHAOS_SCHEDULE"), asInterface)
+	if parseErr != nil {
+		return nil, fmt.Errorf("CHAOS_SCHEDULE: %w", parseErr)
+	}
+	return &runners.ChaosConfig{
+		SoakConfig: *soak,
+		Schedule:   schedule,
 	}, nil
 }
 
