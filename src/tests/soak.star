@@ -53,12 +53,16 @@ def run(plan, nodes, args = {}):
             rippled_nodes_count, goxrpl_nodes_count,
         ))
 
-    plan.print("Waiting for all nodes to reach closed_seq >= 3...")
-    for node in nodes:
-        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
-
     rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
     submit_node = rippled_nodes[0] if len(rippled_nodes) > 0 else nodes[0]
+
+    # Only wait on rippled nodes — same rationale as chaos.star: with the
+    # rippled-only UNL goXRPL doesn't gate quorum, and the current goXRPL
+    # passive-consensus bug keeps it stuck at genesis until the upstream fix
+    # lands. Gating soak launch on goXRPL would deadlock the suite startup.
+    plan.print("Waiting for rippled nodes to reach closed_seq >= 3...")
+    for node in rippled_nodes:
+        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
 
     plan.print("Launching fuzz-soak sidecar (tx_rate={}, accounts={}, rotate_every={}, mutation_rate={})...".format(
         tx_rate, accounts, rotate_every, mutation_rate,
