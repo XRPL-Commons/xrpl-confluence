@@ -55,19 +55,49 @@ func (p *Pool) PickTwoDistinct(r *mathrand.Rand) (*Wallet, *Wallet) {
 	}
 }
 
-// RotateTiers walks the pool and submits a no-op self-AccountSet for each
-// wallet, refreshing per-account state on every node and exercising the
-// sequence-advance path. Future versions will move XRP between tiers; the
-// M1 pool is rich-only, so this is a pacing tick.
+// PickTier returns a uniformly random wallet of the requested tier, or nil
+// if no wallet in the pool matches.
+func (p *Pool) PickTier(t Tier, r *mathrand.Rand) *Wallet {
+	matching := []*Wallet{}
+	for _, w := range p.wallets {
+		if w.Tier == t {
+			matching = append(matching, w)
+		}
+	}
+	if len(matching) == 0 {
+		return nil
+	}
+	return matching[r.IntN(len(matching))]
+}
+
+// RotateTiers walks the pool and performs tier-aware maintenance: AtReserve
+// wallets are re-drained to reserve_base, Rich wallets are topped up if their
+// balance dropped below 2× reserve_base.
 func RotateTiers(submit *rpcclient.Client, pool *Pool, rng *mathrand.Rand) error {
-	_ = rng // unused while pool is rich-only; kept in signature for future rotation logic.
+	_ = rng
 	for _, w := range pool.All() {
-		_, err := submit.SubmitTxJSON(w.Seed, map[string]any{
-			"TransactionType": "AccountSet",
-			"Account":         w.ClassicAddress,
-		})
-		if err != nil {
-			return err
+		switch w.Tier {
+		case AtReserve:
+			if err := setupAtReserve(submit, w); err != nil {
+				return fmt.Errorf("rotate at-reserve %s: %w", w.ClassicAddress, err)
+			}
+		case Rich:
+			info, err := submit.AccountInfo(w.ClassicAddress)
+			if err != nil {
+				continue
+			}
+			balance, err := parseDrops(info.Balance)
+			if err != nil {
+				continue
+			}
+			if balance < reserveBaseDrops*2 {
+				_, _ = submit.SubmitTxJSON(GenesisSecret, map[string]any{
+					"TransactionType": "Payment",
+					"Account":         GenesisAddress,
+					"Destination":     w.ClassicAddress,
+					"Amount":          "10000000000",
+				})
+			}
 		}
 	}
 	return nil

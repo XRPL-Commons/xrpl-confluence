@@ -97,6 +97,14 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
 		return fmt.Errorf("wait for iou payment validation: %w", err)
 	}
+
+	// Phase 3: tier-specific account configuration.
+	if err := ApplyAll(client, pool); err != nil {
+		return fmt.Errorf("apply tiers: %w", err)
+	}
+	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
+		return fmt.Errorf("wait for tier setup validation: %w", err)
+	}
 	return nil
 }
 

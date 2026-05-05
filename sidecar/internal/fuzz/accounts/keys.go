@@ -19,6 +19,7 @@ type Wallet struct {
 	Index          int
 	ClassicAddress string
 	Seed           string // XRPL "s..." secret, suitable for sign-and-submit RPC
+	Tier           Tier
 }
 
 // DeriveWallet produces a reproducible XRPL wallet for (fuzzSeed, index).

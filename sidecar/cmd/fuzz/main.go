@@ -62,6 +62,7 @@ import (
 	"sync"
 	"time"
 
+	accountspkg "github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/chaos"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
@@ -241,6 +242,13 @@ func loadConfig() (*runners.Config, error) {
 		CorpusDir:    corpusDir,
 		BatchClose:   batchClose,
 		MutationRate: mutationRate,
+		TierWeights: accountspkg.TierWeights{
+			Rich:       envInt("TIER_RICH", 1),
+			AtReserve:  envInt("TIER_AT_RESERVE", 0),
+			Multisig:   envInt("TIER_MULTISIG", 0),
+			RegularKey: envInt("TIER_REGULAR_KEY", 0),
+			Blackholed: envInt("TIER_BLACKHOLED", 0),
+		},
 	}
 
 	if val := os.Getenv("CRASH_LABEL_VAL"); val != "" {
@@ -255,6 +263,10 @@ func loadConfig() (*runners.Config, error) {
 				cfg.CrashTailLines = n
 			}
 		}
+	}
+
+	if os.Getenv("LOCAL_SIGN") == "1" {
+		cfg.LocalSign = true
 	}
 
 	return cfg, nil

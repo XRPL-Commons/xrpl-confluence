@@ -44,6 +44,13 @@ type Config struct {
 	// Metrics, when non-nil, receives counter increments on submission,
 	// applied result, divergence, and crash events. Nil disables all metrics.
 	Metrics *metrics.Registry
+	// TierWeights configures the multi-tier account pool. Zero-value means
+	// rich-only (preserves M1 behavior).
+	TierWeights accounts.TierWeights
+	// LocalSign, when true, signs each tx locally via xrpl-go and submits as
+	// tx_blob. Default false preserves rippled-side sign_and_submit behavior.
+	// Required for the byte-mutation generation modes (M2c+).
+	LocalSign bool
 }
 
 // Stats summarises one run.
@@ -134,6 +141,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	inv := oracle.NewInvariantPoolBalance(addrs)
 
 	rng := corpus.NewRNG(cfg.Seed)
+	accounts.AssignTiers(pool, cfg.TierWeights, rng.Rand())
 
 	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
 		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
@@ -191,7 +199,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		if cfg.Metrics != nil {
 			cfg.Metrics.TxsSubmitted.WithLabelValues(tx.TransactionType(), txMode).Inc()
 		}
-		res, err := submitTx(submit, tx)
+		res, err := submitTx(submit, tx, cfg.LocalSign)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			if err != nil {
@@ -327,7 +335,16 @@ func nodeName(u string) string {
 	return name
 }
 
-// submitTx dispatches a Tx through the generic SubmitTxJSON path.
-func submitTx(client *rpcclient.Client, tx *generator.Tx) (*rpcclient.SubmitResult, error) {
+// submitTx dispatches a Tx. When localSign is true it signs locally via
+// xrpl-go and submits the resulting tx_blob; otherwise it delegates to
+// rippled's sign_and_submit path.
+func submitTx(client *rpcclient.Client, tx *generator.Tx, localSign bool) (*rpcclient.SubmitResult, error) {
+	if localSign {
+		blob, err := client.SignLocal(tx.Secret, tx.Fields)
+		if err != nil {
+			return nil, err
+		}
+		return client.SubmitTxBlob(blob)
+	}
 	return client.SubmitTxJSON(tx.Secret, tx.Fields)
 }

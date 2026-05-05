@@ -55,8 +55,10 @@ def run(plan, args = {}):
         plan.print("=== Running delayed sync test (goXRPL launches after rippled advances) ===")
         return delayed_sync.run(plan, rippled_nodes, goxrpl_image, network_config)
 
-    # Launch goXRPL nodes
-    goxrpl_nodes = goxrpl.launch(plan, goxrpl_count, goxrpl_image, network_config)
+    # Launch goXRPL nodes. Chaos suite swaps in goxrpl-tools:latest so
+    # iproute2/iptables are available for netem/partition events.
+    enable_chaos_tools = (test_suite == "chaos")
+    goxrpl_nodes = goxrpl.launch(plan, goxrpl_count, goxrpl_image, network_config, enable_chaos_tools = enable_chaos_tools)
 
     # Launch monitoring dashboard with all nodes
     dashboard.launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files)

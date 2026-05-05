@@ -7,7 +7,7 @@ ROTATE_EVERY  ?= 1000
 MUTATION_RATE ?= 0.05
 CORPUS        ?= $(PWD)/.soak-corpus
 
-.PHONY: soak soak-down soak-tail soak-status soak-pull chaos chaos-down chaos-tail chaos-pull
+.PHONY: soak soak-down soak-tail soak-status soak-pull soak-pull-loop chaos chaos-down chaos-tail chaos-pull chaos-pull-loop
 
 soak:
 	@bash scripts/build-sidecar.sh
@@ -67,3 +67,11 @@ chaos-pull:
 		if [ -z "$$CONTAINER" ]; then echo "container for service uuid $$UUID not found"; exit 1; fi; \
 		docker cp "$$CONTAINER:/output/corpus" $(CHAOS_CORPUS)/ 2>/dev/null && echo "Done." \
 		|| echo "Extract failed (corpus exists? try waiting longer)"
+
+PULL_INTERVAL ?= 300
+
+soak-pull-loop:
+	bash scripts/corpus-pull-loop.sh $(ENCLAVE) fuzz-soak $(PULL_INTERVAL) $(CORPUS)
+
+chaos-pull-loop:
+	bash scripts/corpus-pull-loop.sh $(CHAOS_ENCLAVE) fuzz-chaos $(PULL_INTERVAL) $(CHAOS_CORPUS)

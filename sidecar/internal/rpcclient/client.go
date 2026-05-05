@@ -381,6 +381,19 @@ func (c *Client) SubmitPaymentIOU(secret, account, destination string, amount ma
 	return parseSubmitResult(raw)
 }
 
+// SubmitTxBlob submits a pre-signed transaction blob via the standard
+// `submit` RPC. The blob is the hex-encoded XRPL binary form returned by
+// xrpl-go's wallet.Sign.
+func (c *Client) SubmitTxBlob(blob string) (*SubmitResult, error) {
+	raw, err := c.Call("submit", map[string]any{
+		"tx_blob": blob,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseSubmitResult(raw)
+}
+
 func parseSubmitResult(raw json.RawMessage) (*SubmitResult, error) {
 	var result struct {
 		EngineResult        string `json:"engine_result"`
