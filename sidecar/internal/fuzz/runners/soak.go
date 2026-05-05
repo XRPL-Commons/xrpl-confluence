@@ -162,7 +162,18 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		if cfg.Metrics != nil {
 			cfg.Metrics.TxsSubmitted.WithLabelValues(tx.TransactionType(), txMode).Inc()
 		}
-		res, err := submit.SubmitTxJSON(tx.Secret, tx.Fields)
+		var res *rpcclient.SubmitResult
+		if cfg.LocalSign {
+			blob, signErr := submit.SignLocal(tx.Secret, tx.Fields)
+			if signErr != nil {
+				atomic.AddInt64(&stats.TxsFailed, 1)
+				log.Printf("soak: sign %s: %v", tx.TransactionType(), signErr)
+				continue
+			}
+			res, err = submit.SubmitTxBlob(blob)
+		} else {
+			res, err = submit.SubmitTxJSON(tx.Secret, tx.Fields)
+		}
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
 			continue

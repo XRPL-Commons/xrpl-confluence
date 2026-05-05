@@ -265,6 +265,10 @@ func loadConfig() (*runners.Config, error) {
 		}
 	}
 
+	if os.Getenv("LOCAL_SIGN") == "1" {
+		cfg.LocalSign = true
+	}
+
 	return cfg, nil
 }
 
