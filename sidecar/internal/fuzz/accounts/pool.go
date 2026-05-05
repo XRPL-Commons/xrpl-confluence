@@ -55,6 +55,21 @@ func (p *Pool) PickTwoDistinct(r *mathrand.Rand) (*Wallet, *Wallet) {
 	}
 }
 
+// PickTier returns a uniformly random wallet of the requested tier, or nil
+// if no wallet in the pool matches.
+func (p *Pool) PickTier(t Tier, r *mathrand.Rand) *Wallet {
+	matching := []*Wallet{}
+	for _, w := range p.wallets {
+		if w.Tier == t {
+			matching = append(matching, w)
+		}
+	}
+	if len(matching) == 0 {
+		return nil
+	}
+	return matching[r.IntN(len(matching))]
+}
+
 // RotateTiers walks the pool and submits a no-op self-AccountSet for each
 // wallet, refreshing per-account state on every node and exercising the
 // sequence-advance path. Future versions will move XRP between tiers; the
