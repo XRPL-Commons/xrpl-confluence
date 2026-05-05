@@ -30,12 +30,19 @@ def run(plan, nodes, args = {}):
     if rippled_nodes_count < 2:
         fail("chaos suite requires >= 2 rippled (got {})".format(rippled_nodes_count))
 
-    plan.print("Waiting for all nodes to reach closed_seq >= 3...")
-    for node in nodes:
-        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
-
     rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
     submit_node = rippled_nodes[0]
+
+    # Only wait on rippled nodes. With the rippled-only UNL (see topology.star)
+    # goXRPL can lag far behind without blocking quorum, and at the time of
+    # writing goXRPL has a passive-consensus bug that keeps it at genesis until
+    # validations from rippled reach it correctly. Gating chaos launch on
+    # goXRPL would deadlock on that bug. The chaos runner itself submits txs
+    # through the rippled submit node and oracle-checks the goXRPL nodes, so
+    # any goXRPL divergence still surfaces — it just no longer blocks startup.
+    plan.print("Waiting for rippled nodes to reach closed_seq >= 3...")
+    for node in rippled_nodes:
+        helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
 
     plan.print("Launching fuzz-chaos sidecar")
 

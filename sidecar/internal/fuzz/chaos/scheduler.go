@@ -71,7 +71,11 @@ func (s *ChaosScheduler) Step(ctx context.Context, step int) {
 
 	for i := range s.schedule {
 		e := &s.schedule[i]
-		if s.applied[e] || e.TriggerStep != step {
+		// Fire on the first tick at or after TriggerStep. The soak runner's
+		// periodic block fires every N txs (currently every 10), so a strict
+		// equality check would silently skip TriggerStep values that don't
+		// align to the tick cadence.
+		if s.applied[e] || step < e.TriggerStep {
 			continue
 		}
 		if err := e.Apply.Apply(ctx); err != nil {
