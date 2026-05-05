@@ -1,7 +1,10 @@
 package accounts
 
 import (
+	"fmt"
 	"math/rand/v2"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
 
 // Tier classifies a pool wallet by its account-state shape. Tier-specific
@@ -93,4 +96,52 @@ func AssignTiers(pool *Pool, weights TierWeights, rng *rand.Rand) {
 		}
 	}
 	_ = rng // reserved for future shuffle; deterministic order is fine for now.
+}
+
+// reserveBaseDrops is the XRPL reserve_base (200 XRP). Hard-coded — matches
+// the test network's reserve setting in topology.star.
+const reserveBaseDrops = 200_000_000
+
+// submitter is the minimal interface tier setup needs: tx submission +
+// account_info lookup. The full *rpcclient.Client satisfies it; tests inject
+// a stub.
+type submitter interface {
+	SubmitTxJSON(secret string, tx map[string]any) (*rpcclient.SubmitResult, error)
+	AccountInfo(addr string) (*rpcclient.AccountInfoResult, error)
+}
+
+// setupAtReserve drains the wallet's balance to exactly reserve_base by
+// sending the excess to the genesis address. After this, any tx that
+// requires sending more drops than (balance - reserve - fee) must fail
+// with tecINSUFF_RESERVE — exactly the boundary we want to exercise.
+func setupAtReserve(s submitter, w *Wallet) error {
+	info, err := s.AccountInfo(w.ClassicAddress)
+	if err != nil {
+		return fmt.Errorf("at-reserve: account_info %s: %w", w.ClassicAddress, err)
+	}
+	balance, err := parseDrops(info.Balance)
+	if err != nil {
+		return fmt.Errorf("at-reserve: parse balance %q: %w", info.Balance, err)
+	}
+	// Send everything except reserve_base + 100 drops fee buffer.
+	excess := balance - reserveBaseDrops - 100
+	if excess <= 0 {
+		return nil
+	}
+	_, err = s.SubmitTxJSON(w.Seed, map[string]any{
+		"TransactionType": "Payment",
+		"Account":         w.ClassicAddress,
+		"Destination":     GenesisAddress,
+		"Amount":          fmt.Sprintf("%d", excess),
+	})
+	return err
+}
+
+// parseDrops parses an XRPL balance string (decimal drops as string) into int64.
+func parseDrops(s string) (int64, error) {
+	var n int64
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
