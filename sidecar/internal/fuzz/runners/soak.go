@@ -25,6 +25,11 @@ type SoakConfig struct {
 	Config
 	TxRate      float64 // submissions per second; 0 = uncapped
 	RotateEvery int64   // tx successes between account-pool tier rotations (wired in C2)
+	// OnPeriodic, when non-nil, is called from the soak loop's periodic
+	// block after the crash poller's tick. The argument is the current
+	// successful-tx step counter — useful for chaos schedulers keyed by
+	// step number. Nil-tolerant.
+	OnPeriodic func(step int)
 }
 
 // SoakRun runs an unbounded fuzz loop until ctx is cancelled. It reuses the
@@ -213,6 +218,9 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "divergences")); err == nil {
 					cfg.Metrics.CorpusSize.Set(float64(len(entries)))
 				}
+			}
+			if cfg.OnPeriodic != nil {
+				cfg.OnPeriodic(step)
 			}
 		}
 		if cfg.RotateEvery > 0 && atomic.LoadInt64(&stats.TxsSucceeded)%cfg.RotateEvery == 0 {
