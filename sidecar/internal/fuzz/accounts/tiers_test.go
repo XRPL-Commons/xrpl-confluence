@@ -155,3 +155,39 @@ func TestSetupRegularKey_SetsKeyThenDisablesMaster(t *testing.T) {
 		t.Errorf("SetFlag = %v, want 4 (asfDisableMaster)", stub.calls[1]["SetFlag"])
 	}
 }
+
+func TestSetupBlackholed_DisablesMaster(t *testing.T) {
+	w := &Wallet{Index: 0, ClassicAddress: "rTest", Seed: "sTest", Tier: Blackholed}
+	stub := &stubSubmit{}
+	if err := setupBlackholed(stub, w); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.calls) != 1 {
+		t.Fatalf("submit calls = %d, want 1", len(stub.calls))
+	}
+	if stub.calls[0]["TransactionType"] != "AccountSet" {
+		t.Errorf("tx_type = %v", stub.calls[0]["TransactionType"])
+	}
+	if stub.calls[0]["SetFlag"] != uint32(4) {
+		t.Errorf("SetFlag = %v, want 4 (asfDisableMaster)", stub.calls[0]["SetFlag"])
+	}
+}
+
+func TestApplyAll_RoutesByTier(t *testing.T) {
+	pool, err := NewPool(42, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weights := TierWeights{Rich: 4, AtReserve: 2, Multisig: 2, RegularKey: 1, Blackholed: 1}
+	rng := rand.New(rand.NewPCG(42, 0))
+	AssignTiers(pool, weights, rng)
+	stub := &stubSubmit{}
+	if err := ApplyAll(stub, pool); err != nil {
+		t.Fatal(err)
+	}
+	// Rich = 0 calls. AtReserve = 1 call. Multisig = 1. RegularKey = 2. Blackholed = 1.
+	// Total: 0*4 + 1*2 + 1*2 + 2*1 + 1*1 = 7.
+	if len(stub.calls) != 7 {
+		t.Fatalf("submit calls = %d, want 7", len(stub.calls))
+	}
+}

@@ -195,3 +195,65 @@ func parseDrops(s string) (int64, error) {
 	}
 	return n, nil
 }
+
+// setupBlackholed disables the master without setting a regular key. The
+// account is now inert. Every subsequent tx from it must fail with
+// tefMASTER_DISABLED (or similar).
+func setupBlackholed(s submitter, w *Wallet) error {
+	_, err := s.SubmitTxJSON(w.Seed, map[string]any{
+		"TransactionType": "AccountSet",
+		"Account":         w.ClassicAddress,
+		"SetFlag":         asfDisableMaster,
+	})
+	return err
+}
+
+// ApplyAll walks the pool and runs the appropriate per-tier setup on each
+// wallet. Rich tier is a no-op (default state). Errors short-circuit and
+// are returned with the failing wallet's address attached.
+func ApplyAll(s submitter, pool *Pool) error {
+	wallets := pool.All()
+	for _, w := range wallets {
+		var err error
+		switch w.Tier {
+		case Rich:
+			continue
+		case AtReserve:
+			err = setupAtReserve(s, w)
+		case Multisig:
+			signers := otherWallets(wallets, w, 3)
+			if len(signers) < 3 {
+				return fmt.Errorf("multisig %s: pool has < 3 other wallets", w.ClassicAddress)
+			}
+			err = setupMultisig(s, w, signers)
+		case RegularKey:
+			signers := otherWallets(wallets, w, 1)
+			if len(signers) < 1 {
+				return fmt.Errorf("regkey %s: pool has < 1 other wallet", w.ClassicAddress)
+			}
+			err = setupRegularKey(s, w, signers[0].ClassicAddress)
+		case Blackholed:
+			err = setupBlackholed(s, w)
+		}
+		if err != nil {
+			return fmt.Errorf("tier %s on %s: %w", w.Tier, w.ClassicAddress, err)
+		}
+	}
+	return nil
+}
+
+// otherWallets returns up to n wallets from the pool whose ClassicAddress
+// is not equal to skip's. Used to draw signers/regular-keys from siblings.
+func otherWallets(wallets []*Wallet, skip *Wallet, n int) []*Wallet {
+	out := make([]*Wallet, 0, n)
+	for _, w := range wallets {
+		if w.ClassicAddress == skip.ClassicAddress {
+			continue
+		}
+		out = append(out, w)
+		if len(out) == n {
+			return out
+		}
+	}
+	return out
+}
