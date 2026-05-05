@@ -1,0 +1,4 @@
+[
+  {"step": 50,  "recover_after": 25, "type": "restart", "container": "rippled-1"},
+  {"step": 150, "recover_after": 30, "type": "latency", "container": "rippled-0", "iface": "eth0", "delay_ms": 200}
+]
