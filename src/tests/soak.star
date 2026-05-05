@@ -42,6 +42,17 @@ def run(plan, nodes, args = {}):
     accounts = args.get("accounts", 50)
     corpus_host_path = args.get("corpus_host_path", "")
 
+    # Soak runs are about exercising goXRPL hard against multiple rippled
+    # validators. Require at least 2 rippled (so quorum survives one going
+    # down) and at least 1 goXRPL (otherwise this is just rippled testing
+    # itself). The Makefile defaults to 3+2 — see top-level Makefile.
+    rippled_nodes_count = len([n for n in nodes if n["type"] == "rippled"])
+    goxrpl_nodes_count = len([n for n in nodes if n["type"] == "goxrpl"])
+    if rippled_nodes_count < 2 or goxrpl_nodes_count < 1:
+        fail("soak suite requires >= 2 rippled and >= 1 goXRPL (got {} rippled, {} goxrpl)".format(
+            rippled_nodes_count, goxrpl_nodes_count,
+        ))
+
     plan.print("Waiting for all nodes to reach closed_seq >= 3...")
     for node in nodes:
         helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
