@@ -300,14 +300,37 @@ func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
 			Balance  string `json:"Balance"`
 			Sequence int    `json:"Sequence"`
 		} `json:"account_data"`
-		Status string `json:"status"`
+		Status       string `json:"status"`
+		Error        string `json:"error"`
+		ErrorCode    int    `json:"error_code"`
+		ErrorMessage string `json:"error_message"`
 	}
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
 		return nil, fmt.Errorf("parse account_info: %w", err)
 	}
 
-	if wrapper.Status == "error" {
-		return nil, fmt.Errorf("account %s not found", account)
+	// rippled reports failure either as status="error" or — when the
+	// inner result envelope is a successful JSON-RPC response carrying
+	// an XRPL-level error — by populating the error field directly.
+	// Surface the actual error code so callers don't conflate transient
+	// states (noNetwork, actMalformed) with the genuine actNotFound case.
+	if wrapper.Status == "error" || wrapper.Error != "" {
+		code := wrapper.Error
+		if code == "" {
+			code = "error"
+		}
+		msg := wrapper.ErrorMessage
+		if msg == "" {
+			msg = code
+		}
+		return nil, fmt.Errorf("account_info %s: %s (%s)", account, code, msg)
+	}
+
+	// Sanity check: a successful response must include the account_data
+	// block. If the parse succeeded but account_data is empty, treat that
+	// as a degenerate response rather than silently returning zero values.
+	if wrapper.AccountData.Account == "" {
+		return nil, fmt.Errorf("account_info %s: empty account_data in response", account)
 	}
 
 	return &AccountInfoResult{
