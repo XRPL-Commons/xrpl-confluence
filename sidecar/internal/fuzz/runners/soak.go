@@ -57,6 +57,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		return nil, err
 	}
 	rng := corpus.NewRNG(cfg.Seed)
+	accounts.AssignTiers(pool, cfg.TierWeights, rng.Rand())
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {

@@ -44,6 +44,9 @@ type Config struct {
 	// Metrics, when non-nil, receives counter increments on submission,
 	// applied result, divergence, and crash events. Nil disables all metrics.
 	Metrics *metrics.Registry
+	// TierWeights configures the multi-tier account pool. Zero-value means
+	// rich-only (preserves M1 behavior).
+	TierWeights accounts.TierWeights
 }
 
 // Stats summarises one run.
@@ -134,6 +137,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	inv := oracle.NewInvariantPoolBalance(addrs)
 
 	rng := corpus.NewRNG(cfg.Seed)
+	accounts.AssignTiers(pool, cfg.TierWeights, rng.Rand())
 
 	log.Printf("realtime: seed=%#x accounts=%d txs=%d nodes=%d",
 		cfg.Seed, cfg.AccountN, cfg.TxCount, len(cfg.NodeURLs))
