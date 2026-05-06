@@ -18,9 +18,10 @@ type Registry struct {
 	TxsApplied     *prometheus.CounterVec   // labels: tx_type, result (e.g. tesSUCCESS)
 	Divergences    *prometheus.CounterVec   // labels: layer (state_hash|tx_result|metadata|invariant|crash)
 	Crashes        *prometheus.CounterVec   // labels: node, impl
-	AccountsActive prometheus.Gauge
-	CorpusSize     prometheus.Gauge
-	CurrentSeed    prometheus.Gauge
+	AccountsActive   prometheus.Gauge
+	CorpusSize       prometheus.Gauge
+	UniqueSignatures prometheus.Gauge
+	CurrentSeed      prometheus.Gauge
 	OracleLatency  *prometheus.HistogramVec // labels: layer
 	CloseDuration  prometheus.Histogram
 }
@@ -47,6 +48,10 @@ func New() *Registry {
 	)
 	r.AccountsActive = prometheus.NewGauge(prometheus.GaugeOpts{Name: "fuzz_accounts_active"})
 	r.CorpusSize = prometheus.NewGauge(prometheus.GaugeOpts{Name: "fuzz_corpus_size"})
+	r.UniqueSignatures = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "fuzz_unique_signatures",
+		Help: "Distinct divergence signatures observed in the current run.",
+	})
 	r.CurrentSeed = prometheus.NewGauge(prometheus.GaugeOpts{Name: "fuzz_current_seed"})
 	r.OracleLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{Name: "fuzz_oracle_latency_seconds", Buckets: prometheus.DefBuckets},
@@ -58,7 +63,7 @@ func New() *Registry {
 
 	for _, c := range []prometheus.Collector{
 		r.TxsSubmitted, r.TxsApplied, r.Divergences, r.Crashes,
-		r.AccountsActive, r.CorpusSize, r.CurrentSeed,
+		r.AccountsActive, r.CorpusSize, r.UniqueSignatures, r.CurrentSeed,
 		r.OracleLatency, r.CloseDuration,
 	} {
 		r.reg.MustRegister(c)

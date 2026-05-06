@@ -25,7 +25,7 @@ func ChaosRun(ctx context.Context, cfg ChaosConfig) (*Stats, *chaos.Stats, error
 	rec := corpus.NewRecorder(cfg.CorpusDir, cfg.Seed)
 	sched.OnAudit = func(a chaos.AuditEntry) {
 		blob, _ := json.Marshal(a)
-		_ = rec.RecordDivergence(&corpus.Divergence{
+		_, _ = rec.RecordDivergence(&corpus.Divergence{
 			Kind:        "chaos",
 			Description: fmt.Sprintf("%s/%s at step %d", a.Event, a.Phase, a.Step),
 			Details:     map[string]any{"audit": json.RawMessage(blob)},

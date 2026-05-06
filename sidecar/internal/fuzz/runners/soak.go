@@ -91,7 +91,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		poller = crash.NewPoller(cfg.CrashRuntime, cfg.CrashLabelKey, cfg.CrashLabelVal, tail)
 		poller.OnCrash = func(e *crash.Event) {
 			atomic.AddInt64(&stats.Divergences, 1)
-			_ = rec.RecordDivergence(&corpus.Divergence{
+			_, _ = rec.RecordDivergence(&corpus.Divergence{
 				Kind:        "crash",
 				Description: fmt.Sprintf("%s exited %d (%s)", e.Container, e.ExitCode, e.Kind),
 				Details: map[string]any{
@@ -201,7 +201,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s disagreed", res.TxHash),
 					Details:     map[string]any{"tx_hash": res.TxHash, "tx_type": tx.TransactionType(), "node_results": cmp.NodeResults},
 				}
-				_ = rec.RecordDivergence(d)
+				_, _ = rec.RecordDivergence(d)
 				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("tx_result").Inc()
@@ -214,7 +214,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
 					Details:     map[string]any{"tx_hash": res.TxHash, "tx_type": tx.TransactionType(), "node_meta": meta.NodeMeta},
 				}
-				_ = rec.RecordDivergence(d)
+				_, _ = rec.RecordDivergence(d)
 				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("metadata").Inc()
@@ -234,6 +234,9 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 			if cfg.Metrics != nil {
 				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "divergences")); err == nil {
 					cfg.Metrics.CorpusSize.Set(float64(len(entries)))
+				}
+				if entries, err := os.ReadDir(filepath.Join(cfg.CorpusDir, "signatures")); err == nil {
+					cfg.Metrics.UniqueSignatures.Set(float64(len(entries)))
 				}
 			}
 			if cfg.OnPeriodic != nil {
