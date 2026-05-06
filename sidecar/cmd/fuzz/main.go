@@ -67,6 +67,7 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/chaos"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/manifest"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/metrics"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/runners"
 )
@@ -95,6 +96,17 @@ func main() {
 		cfg.Metrics = mreg
 		log.Printf("fuzz: seed=%d nodes=%d submit=%s tx_count=%d accounts=%d corpus=%s mutation_rate=%.2f",
 			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxCount, cfg.AccountN, cfg.CorpusDir, cfg.MutationRate)
+		writeManifest("fuzz", manifest.Manifest{
+			Seed:        cfg.Seed,
+			Accounts:    cfg.AccountN,
+			TxCount:     cfg.TxCount,
+			Mutation:    cfg.MutationRate,
+			LocalSign:   cfg.LocalSign,
+			Nodes:       cfg.NodeURLs,
+			SubmitURL:   cfg.SubmitURL,
+			BatchClose:  cfg.BatchClose.String(),
+			TierWeights: tierWeightsMap(cfg.TierWeights),
+		}, cfg.CorpusDir)
 		stats, err := runners.Run(ctx, *cfg)
 		if err != nil {
 			log.Fatalf("run: %v", err)
@@ -113,6 +125,15 @@ func main() {
 		log.Printf("replay: seed=%d nodes=%d submit=%s mainnet=%s range=%d..%d accounts=%d corpus=%s",
 			rcfg.Seed, len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.MainnetURL,
 			rcfg.LedgerStart, rcfg.LedgerEnd, rcfg.AccountN, rcfg.CorpusDir)
+		writeManifest("replay", manifest.Manifest{
+			Seed:        rcfg.Seed,
+			Accounts:    rcfg.AccountN,
+			Nodes:       rcfg.NodeURLs,
+			SubmitURL:   rcfg.SubmitURL,
+			BatchClose:  rcfg.BatchClose.String(),
+			LedgerStart: rcfg.LedgerStart,
+			LedgerEnd:   rcfg.LedgerEnd,
+		}, rcfg.CorpusDir)
 		stats, err := runners.ReplayRun(ctx, *rcfg)
 		if err != nil {
 			log.Fatalf("replay: %v", err)
@@ -167,6 +188,18 @@ func main() {
 		cfg.Metrics = mreg
 		log.Printf("soak: seed=%d nodes=%d submit=%s rate=%.2f rotate_every=%d",
 			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxRate, cfg.RotateEvery)
+		writeManifest("soak", manifest.Manifest{
+			Seed:        cfg.Seed,
+			Accounts:    cfg.AccountN,
+			TxRate:      cfg.TxRate,
+			Rotate:      cfg.RotateEvery,
+			Mutation:    cfg.MutationRate,
+			LocalSign:   cfg.LocalSign,
+			Nodes:       cfg.NodeURLs,
+			SubmitURL:   cfg.SubmitURL,
+			BatchClose:  cfg.BatchClose.String(),
+			TierWeights: tierWeightsMap(cfg.TierWeights),
+		}, cfg.CorpusDir)
 		stats, err := runners.SoakRun(ctx, *cfg)
 		if err != nil {
 			log.Fatalf("soak: %v", err)
@@ -187,6 +220,19 @@ func main() {
 		cfg.Metrics = mreg
 		log.Printf("chaos: seed=%d nodes=%d submit=%s rate=%.2f rotate_every=%d events=%d",
 			cfg.Seed, len(cfg.NodeURLs), cfg.SubmitURL, cfg.TxRate, cfg.RotateEvery, len(cfg.Schedule))
+		writeManifest("chaos", manifest.Manifest{
+			Seed:        cfg.Seed,
+			Accounts:    cfg.AccountN,
+			TxRate:      cfg.TxRate,
+			Rotate:      cfg.RotateEvery,
+			Mutation:    cfg.MutationRate,
+			LocalSign:   cfg.LocalSign,
+			Nodes:       cfg.NodeURLs,
+			SubmitURL:   cfg.SubmitURL,
+			BatchClose:  cfg.BatchClose.String(),
+			TierWeights: tierWeightsMap(cfg.TierWeights),
+			Schedule:    os.Getenv("CHAOS_SCHEDULE"),
+		}, cfg.CorpusDir)
 		stats, chaosStats, err := runners.ChaosRun(ctx, *cfg)
 		if err != nil {
 			log.Fatalf("chaos: %v", err)
@@ -439,6 +485,30 @@ func loadChaosConfig() (*runners.ChaosConfig, error) {
 		SoakConfig: *soak,
 		Schedule:   schedule,
 	}, nil
+}
+
+func tierWeightsMap(w accountspkg.TierWeights) map[string]int {
+	return map[string]int{
+		"rich":        w.Rich,
+		"at_reserve":  w.AtReserve,
+		"multisig":    w.Multisig,
+		"regular_key": w.RegularKey,
+		"blackholed":  w.Blackholed,
+	}
+}
+
+func writeManifest(mode string, m manifest.Manifest, corpusDir string) {
+	m.Mode = mode
+	m.CorpusDir = corpusDir
+	if m.Image == "" {
+		m.Image = os.Getenv("FUZZ_IMAGE_TAG")
+	}
+	if m.GitSHA == "" {
+		m.GitSHA = os.Getenv("FUZZ_GIT_SHA")
+	}
+	if err := manifest.Write(corpusDir, m); err != nil {
+		log.Printf("manifest: %v", err)
+	}
 }
 
 func nodeNamesFromURLs(urls []string) []string {
