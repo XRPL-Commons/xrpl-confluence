@@ -30,6 +30,9 @@ func ChaosRun(ctx context.Context, cfg ChaosConfig) (*Stats, *chaos.Stats, error
 			Description: fmt.Sprintf("%s/%s at step %d", a.Event, a.Phase, a.Step),
 			Details:     map[string]any{"audit": json.RawMessage(blob)},
 		})
+		if a.Error != "" {
+			cfg.Alerter.Maybe("chaos:"+a.Event, fmt.Sprintf("chaos event errored: %s/%s step %d: %s", a.Event, a.Phase, a.Step, a.Error))
+		}
 		if cfg.Metrics != nil {
 			cfg.Metrics.Divergences.WithLabelValues("chaos").Inc()
 		}

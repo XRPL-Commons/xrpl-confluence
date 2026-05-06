@@ -63,6 +63,7 @@ import (
 	"time"
 
 	accountspkg "github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/alert"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/chaos"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
@@ -267,6 +268,10 @@ func loadConfig() (*runners.Config, error) {
 
 	if os.Getenv("LOCAL_SIGN") == "1" {
 		cfg.LocalSign = true
+	}
+
+	if u := os.Getenv("ALERT_WEBHOOK_URL"); u != "" {
+		cfg.Alerter = alert.NewWebhook(u)
 	}
 
 	return cfg, nil

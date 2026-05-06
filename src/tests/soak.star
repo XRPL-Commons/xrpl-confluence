@@ -77,6 +77,7 @@ def run(plan, nodes, args = {}):
         mutation_rate = mutation_rate,
         accounts = accounts,
         corpus_host_path = corpus_host_path,
+        alert_webhook_url = args.get("alert_webhook_url", ""),
     )
 
     plan.print("fuzz-soak service is up. Corpus accumulates in persistent volume 'fuzz-soak-output' at /output/corpus.")

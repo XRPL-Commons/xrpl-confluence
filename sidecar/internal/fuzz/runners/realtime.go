@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/alert"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/crash"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/generator"
@@ -51,6 +52,9 @@ type Config struct {
 	// tx_blob. Default false preserves rippled-side sign_and_submit behavior.
 	// Required for the byte-mutation generation modes (M2c+).
 	LocalSign bool
+	// Alerter, when non-nil, fires on first-seen divergence signature and on
+	// every crash. Nil disables. See sidecar/internal/fuzz/alert.
+	Alerter *alert.Webhook
 }
 
 // Stats summarises one run.
@@ -102,6 +106,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					"log_tail":    e.LogTail,
 				},
 			})
+			cfg.Alerter.Maybe("", fmt.Sprintf("crash: %s exited %d (%s)", e.Container, e.ExitCode, e.Kind))
 			if cfg.Metrics != nil {
 				cfg.Metrics.Crashes.WithLabelValues(e.Container, e.Kind).Inc()
 				cfg.Metrics.Divergences.WithLabelValues("crash").Inc()
@@ -227,7 +232,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			cmp := orc.CompareTxResult(ctx, res.TxHash)
 			if !cmp.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				d := &corpus.Divergence{
 					Kind:        "tx_result",
 					Description: fmt.Sprintf("tx %s disagreed across nodes", res.TxHash),
 					Details: map[string]any{
@@ -235,7 +240,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						"tx_type":      tx.TransactionType(),
 						"node_results": cmp.NodeResults,
 					},
-				})
+				}
+				_ = rec.RecordDivergence(d)
+				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("tx_result").Inc()
 				}
@@ -247,7 +254,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			meta := orc.CompareTxMetadata(ctx, res.TxHash)
 			if !meta.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				d := &corpus.Divergence{
 					Kind:        "metadata",
 					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
 					Details: map[string]any{
@@ -255,7 +262,9 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						"tx_type":   tx.TransactionType(),
 						"node_meta": meta.NodeMeta,
 					},
-				})
+				}
+				_ = rec.RecordDivergence(d)
+				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("metadata").Inc()
 				}
@@ -291,11 +300,13 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					atomic.AddInt64(&stats.LedgersCompared, 1)
 					if !cmp.Agreed {
 						atomic.AddInt64(&stats.Divergences, 1)
-						_ = rec.RecordDivergence(&corpus.Divergence{
+						d := &corpus.Divergence{
 							Kind:        "state_hash",
 							Description: fmt.Sprintf("ledger %d diverged", seq),
 							Details:     map[string]any{"comparison": cmp},
-						})
+						}
+						_ = rec.RecordDivergence(d)
+						cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 						if cfg.Metrics != nil {
 							cfg.Metrics.Divergences.WithLabelValues("state_hash").Inc()
 						}
@@ -305,11 +316,13 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 
 				if err := inv.CheckLedger(submit); err != nil {
 					atomic.AddInt64(&stats.Divergences, 1)
-					_ = rec.RecordDivergence(&corpus.Divergence{
+					d := &corpus.Divergence{
 						Kind:        "invariant",
 						Description: err.Error(),
 						Details:     map[string]any{"invariant": "pool_balance_monotone"},
-					})
+					}
+					_ = rec.RecordDivergence(d)
+					cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 					if cfg.Metrics != nil {
 						cfg.Metrics.Divergences.WithLabelValues("invariant").Inc()
 					}

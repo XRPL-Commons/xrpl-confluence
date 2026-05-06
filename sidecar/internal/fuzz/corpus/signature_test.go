@@ -134,3 +134,39 @@ func TestSignature_NilDivergence(t *testing.T) {
 		t.Fatal("nil divergence must not match")
 	}
 }
+
+func TestSignature_FromInMemoryDivergence(t *testing.T) {
+	cases := []struct {
+		name string
+		d    Divergence
+		want string // expected Key()
+	}{
+		{"tx_result", Divergence{Kind: "tx_result", Details: map[string]any{"tx_type": "Payment"}}, "tx_result_Payment"},
+		{"metadata", Divergence{Kind: "metadata", Details: map[string]any{"tx_type": "OfferCreate"}}, "metadata_OfferCreate"},
+		{"invariant", Divergence{Kind: "invariant", Details: map[string]any{"invariant": "pool_balance_monotone"}}, "invariant_pool_balance_monotone"},
+		{"crash", Divergence{Kind: "crash"}, "crash"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Signature(&c.d).Key()
+			if got != c.want {
+				t.Errorf("Key()=%q want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestSignature_KeySanitisesUnsafeCharacters(t *testing.T) {
+	sig := DivergenceSignature{Kind: "invariant", Invariant: "weird/path:name"}
+	got := sig.Key()
+	want := "invariant_weird_path_name"
+	if got != want {
+		t.Errorf("Key()=%q want %q", got, want)
+	}
+}
+
+func TestSignature_NilSafe(t *testing.T) {
+	if got := Signature(nil); got.Kind != "" {
+		t.Errorf("Signature(nil) = %+v, want zero", got)
+	}
+}

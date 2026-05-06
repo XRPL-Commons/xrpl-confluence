@@ -102,6 +102,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					"log_tail":    e.LogTail,
 				},
 			})
+			cfg.Alerter.Maybe("", fmt.Sprintf("crash: %s exited %d (%s)", e.Container, e.ExitCode, e.Kind))
 			if cfg.Metrics != nil {
 				cfg.Metrics.Crashes.WithLabelValues(e.Container, e.Kind).Inc()
 				cfg.Metrics.Divergences.WithLabelValues("crash").Inc()
@@ -195,22 +196,26 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		if res.TxHash != "" {
 			if cmp := orc.CompareTxResult(ctx, res.TxHash); !cmp.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				d := &corpus.Divergence{
 					Kind:        "tx_result",
 					Description: fmt.Sprintf("tx %s disagreed", res.TxHash),
-					Details:     map[string]any{"tx_hash": res.TxHash, "node_results": cmp.NodeResults},
-				})
+					Details:     map[string]any{"tx_hash": res.TxHash, "tx_type": tx.TransactionType(), "node_results": cmp.NodeResults},
+				}
+				_ = rec.RecordDivergence(d)
+				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("tx_result").Inc()
 				}
 			}
 			if meta := orc.CompareTxMetadata(ctx, res.TxHash); !meta.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				d := &corpus.Divergence{
 					Kind:        "metadata",
 					Description: fmt.Sprintf("tx %s metadata diverged", res.TxHash),
-					Details:     map[string]any{"tx_hash": res.TxHash, "node_meta": meta.NodeMeta},
-				})
+					Details:     map[string]any{"tx_hash": res.TxHash, "tx_type": tx.TransactionType(), "node_meta": meta.NodeMeta},
+				}
+				_ = rec.RecordDivergence(d)
+				cfg.Alerter.Maybe(corpus.Signature(d).Key(), fmt.Sprintf("[%s] %s", d.Kind, d.Description))
 				if cfg.Metrics != nil {
 					cfg.Metrics.Divergences.WithLabelValues("metadata").Inc()
 				}
