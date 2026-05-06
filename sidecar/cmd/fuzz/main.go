@@ -425,7 +425,8 @@ func loadChaosConfig() (*runners.ChaosConfig, error) {
 	if rt != nil {
 		asInterface = rt
 	}
-	schedule, parseErr := chaos.ParseSchedule(scheduleJSON, asInterface)
+	env := chaos.ScheduleEnv{Nodes: nodeNamesFromURLs(soak.NodeURLs), Seed: soak.Seed}
+	schedule, parseErr := chaos.ParseSchedule(scheduleJSON, asInterface, env)
 	if parseErr != nil {
 		return nil, fmt.Errorf("CHAOS_SCHEDULE: %w", parseErr)
 	}
@@ -433,6 +434,19 @@ func loadChaosConfig() (*runners.ChaosConfig, error) {
 		SoakConfig: *soak,
 		Schedule:   schedule,
 	}, nil
+}
+
+func nodeNamesFromURLs(urls []string) []string {
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		s := strings.TrimPrefix(u, "http://")
+		s = strings.TrimPrefix(s, "https://")
+		if i := strings.Index(s, ":"); i > 0 {
+			s = s[:i]
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func envDefault(key, def string) string {
