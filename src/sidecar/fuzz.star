@@ -121,7 +121,8 @@ def launch_soak(
     rotate_every = 1000,
     mutation_rate = 0.0,
     accounts = 50,
-    corpus_host_path = ""):
+    corpus_host_path = "",
+    alert_webhook_url = ""):
     """Launch the fuzz sidecar in soak (unbounded) mode.
 
     See launch() for fuzz/shrink modes; this wrapper keeps soak's longer-lived
@@ -161,6 +162,23 @@ def launch_soak(
         "/output": Directory(persistent_key = "fuzz-soak-output"),
     }
 
+    env_vars = {
+        "MODE":             "soak",
+        "NODES":            node_urls,
+        "SUBMIT_URL":       submit_url,
+        "ACCOUNTS":         str(accounts),
+        "TX_RATE":          str(tx_rate),
+        "ROTATE_EVERY":     str(rotate_every),
+        "MUTATION_RATE":    str(mutation_rate),
+        "CORPUS_DIR":       "/output/corpus",
+        "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
+        "CRASH_LABEL_VAL":  "node",
+        "CRASH_TAIL_LINES": "200",
+        "DOCKER_HOST":      "tcp://host.docker.internal:2375",
+    }
+    if alert_webhook_url != "":
+        env_vars["ALERT_WEBHOOK_URL"] = alert_webhook_url
+
     return plan.add_service(
         name = "fuzz-soak",
         config = ServiceConfig(
@@ -174,20 +192,7 @@ def launch_soak(
                 ),
             },
             files = files,
-            env_vars = {
-                "MODE":             "soak",
-                "NODES":            node_urls,
-                "SUBMIT_URL":       submit_url,
-                "ACCOUNTS":         str(accounts),
-                "TX_RATE":          str(tx_rate),
-                "ROTATE_EVERY":     str(rotate_every),
-                "MUTATION_RATE":    str(mutation_rate),
-                "CORPUS_DIR":       "/output/corpus",
-                "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
-                "CRASH_LABEL_VAL":  "node",
-                "CRASH_TAIL_LINES": "200",
-                "DOCKER_HOST":      "tcp://host.docker.internal:2375",
-            },
+            env_vars = env_vars,
         ),
     )
 
@@ -200,7 +205,8 @@ def launch_chaos(
     tx_rate = 0,
     rotate_every = 1000,
     mutation_rate = 0.0,
-    accounts = 50):
+    accounts = 50,
+    alert_webhook_url = ""):
     """Launch the fuzz sidecar in chaos mode.
 
     Same wiring as launch_soak plus CHAOS_SCHEDULE (JSON string). The
@@ -218,6 +224,24 @@ def launch_chaos(
         "/output": Directory(persistent_key = "fuzz-chaos-output"),
     }
 
+    env_vars = {
+        "MODE":             "chaos",
+        "NODES":            node_urls,
+        "SUBMIT_URL":       submit_url,
+        "ACCOUNTS":         str(accounts),
+        "TX_RATE":          str(tx_rate),
+        "ROTATE_EVERY":     str(rotate_every),
+        "MUTATION_RATE":    str(mutation_rate),
+        "CORPUS_DIR":       "/output/corpus",
+        "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
+        "CRASH_LABEL_VAL":  "node",
+        "CRASH_TAIL_LINES": "200",
+        "DOCKER_HOST":      "tcp://host.docker.internal:2375",
+        "CHAOS_SCHEDULE":   chaos_schedule,
+    }
+    if alert_webhook_url != "":
+        env_vars["ALERT_WEBHOOK_URL"] = alert_webhook_url
+
     return plan.add_service(
         name = "fuzz-chaos",
         config = ServiceConfig(
@@ -231,20 +255,6 @@ def launch_chaos(
                 ),
             },
             files = files,
-            env_vars = {
-                "MODE":             "chaos",
-                "NODES":            node_urls,
-                "SUBMIT_URL":       submit_url,
-                "ACCOUNTS":         str(accounts),
-                "TX_RATE":          str(tx_rate),
-                "ROTATE_EVERY":     str(rotate_every),
-                "MUTATION_RATE":    str(mutation_rate),
-                "CORPUS_DIR":       "/output/corpus",
-                "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
-                "CRASH_LABEL_VAL":  "node",
-                "CRASH_TAIL_LINES": "200",
-                "DOCKER_HOST":      "tcp://host.docker.internal:2375",
-                "CHAOS_SCHEDULE":   chaos_schedule,
-            },
+            env_vars = env_vars,
         ),
     )

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // DivergenceSignature is the comparable shape used by the shrinker to decide
@@ -81,6 +82,57 @@ func (s DivergenceSignature) Matches(d *Divergence) bool {
 		return v == s.Invariant
 	}
 	return true
+}
+
+// Signature derives a signature directly from an in-memory Divergence —
+// the same logic as LoadDivergenceSignature but without disk IO. Returns
+// the zero value for nil input.
+func Signature(d *Divergence) DivergenceSignature {
+	var s DivergenceSignature
+	if d == nil {
+		return s
+	}
+	s.Kind = d.Kind
+	switch d.Kind {
+	case "tx_result", "metadata":
+		if v, ok := d.Details["tx_type"].(string); ok {
+			s.TxType = v
+		}
+	case "state_hash":
+		s.Field = stateHashField(d.Details)
+	case "invariant":
+		if v, ok := d.Details["invariant"].(string); ok {
+			s.Invariant = v
+		}
+	}
+	return s
+}
+
+// Key returns a filesystem-safe stable identifier for this signature.
+// Used as the per-signature index directory name and as the dedup key
+// for the alert webhook.
+func (s DivergenceSignature) Key() string {
+	parts := []string{s.Kind}
+	for _, p := range []string{s.TxType, s.Field, s.Invariant} {
+		if p != "" {
+			parts = append(parts, sanitize(p))
+		}
+	}
+	return strings.Join(parts, "_")
+}
+
+func sanitize(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
+			out = append(out, c)
+		default:
+			out = append(out, '_')
+		}
+	}
+	return string(out)
 }
 
 func stateHashField(details map[string]any) string {

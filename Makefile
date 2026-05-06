@@ -7,12 +7,18 @@ ROTATE_EVERY  ?= 1000
 MUTATION_RATE ?= 0.05
 CORPUS        ?= $(PWD)/.soak-corpus
 
+# Optional sidecars / integrations.
+OBSERVABILITY     ?= 0
+ALERT_WEBHOOK_URL ?=
+
+OBSERVABILITY_BOOL := $(if $(filter 1 true yes,$(OBSERVABILITY)),true,false)
+
 .PHONY: soak soak-down soak-tail soak-status soak-pull soak-pull-loop chaos chaos-down chaos-tail chaos-pull chaos-pull-loop docker-proxy docker-proxy-down
 
 soak:
 	@bash scripts/build-sidecar.sh
 	kurtosis enclave rm -f $(ENCLAVE) >/dev/null 2>&1 || true
-	kurtosis run --enclave $(ENCLAVE) . '{"test_suite":"soak","goxrpl_count":$(GOXRPL_COUNT),"rippled_count":$(RIPPLED_COUNT),"soak_args":{"tx_rate":$(TX_RATE),"accounts":$(ACCOUNTS),"rotate_every":$(ROTATE_EVERY),"mutation_rate":$(MUTATION_RATE)}}'
+	kurtosis run --enclave $(ENCLAVE) . '{"test_suite":"soak","goxrpl_count":$(GOXRPL_COUNT),"rippled_count":$(RIPPLED_COUNT),"soak_args":{"tx_rate":$(TX_RATE),"accounts":$(ACCOUNTS),"rotate_every":$(ROTATE_EVERY),"mutation_rate":$(MUTATION_RATE),"enable_observability":$(OBSERVABILITY_BOOL),"alert_webhook_url":"$(ALERT_WEBHOOK_URL)"}}'
 	@DASH_IP=$$(kurtosis service inspect $(ENCLAVE) dashboard 2>/dev/null | awk '/IP Address/ {print $$3; exit}'); \
 		if [ -n "$$DASH_IP" ]; then echo "Dashboard: http://$$DASH_IP:8080"; fi
 	@echo "Tail logs: make soak-tail"
@@ -48,7 +54,7 @@ chaos:
 	@if [ ! -f $(CHAOS_SCHEDULE) ]; then echo "missing $(CHAOS_SCHEDULE) — copy .chaos-schedule.example.json or see docs/plans/2026-05-05-chaos-runner-m4.md"; exit 1; fi
 	@SCHEDULE=$$(cat $(CHAOS_SCHEDULE) | tr -d '\n' | sed 's/"/\\"/g'); \
 		kurtosis enclave rm -f $(CHAOS_ENCLAVE) >/dev/null 2>&1 || true; \
-		kurtosis run --enclave $(CHAOS_ENCLAVE) . "{\"test_suite\":\"chaos\",\"goxrpl_count\":$(GOXRPL_COUNT),\"rippled_count\":$(RIPPLED_COUNT),\"chaos_args\":{\"schedule\":\"$$SCHEDULE\",\"tx_rate\":$(TX_RATE),\"accounts\":$(ACCOUNTS),\"rotate_every\":$(ROTATE_EVERY),\"mutation_rate\":$(MUTATION_RATE)}}"
+		kurtosis run --enclave $(CHAOS_ENCLAVE) . "{\"test_suite\":\"chaos\",\"goxrpl_count\":$(GOXRPL_COUNT),\"rippled_count\":$(RIPPLED_COUNT),\"chaos_args\":{\"schedule\":\"$$SCHEDULE\",\"tx_rate\":$(TX_RATE),\"accounts\":$(ACCOUNTS),\"rotate_every\":$(ROTATE_EVERY),\"mutation_rate\":$(MUTATION_RATE),\"enable_observability\":$(OBSERVABILITY_BOOL),\"alert_webhook_url\":\"$(ALERT_WEBHOOK_URL)\"}}"
 	@echo "Tail logs: make chaos-tail"
 	@echo "Pull corpus: make chaos-pull"
 

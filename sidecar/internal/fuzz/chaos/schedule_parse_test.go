@@ -13,7 +13,7 @@ func TestParseSchedule_AllEventKinds(t *testing.T) {
 	  {"step": 200, "recover_after": 40, "type": "amendment", "feature": "FeatureFoo", "target": "http://rippled-0:5005"}
 	]`
 	rt := &fakeRuntime{}
-	sched, err := ParseSchedule(json, rt)
+	sched, err := ParseSchedule(json, rt, ScheduleEnv{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,18 +30,62 @@ func TestParseSchedule_AllEventKinds(t *testing.T) {
 
 func TestParseSchedule_RejectsUnknownType(t *testing.T) {
 	rt := &fakeRuntime{}
-	_, err := ParseSchedule(`[{"step":1,"type":"bogus","container":"x"}]`, rt)
+	_, err := ParseSchedule(`[{"step":1,"type":"bogus","container":"x"}]`, rt, ScheduleEnv{})
 	if err == nil || !strings.Contains(err.Error(), "bogus") {
 		t.Fatalf("err = %v, want contains 'bogus'", err)
 	}
 }
 
 func TestParseSchedule_EmptyReturnsNil(t *testing.T) {
-	sched, err := ParseSchedule("", nil)
+	sched, err := ParseSchedule("", nil, ScheduleEnv{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sched != nil {
 		t.Errorf("sched = %v, want nil", sched)
+	}
+}
+
+func TestParseSchedule_RecurringExpands(t *testing.T) {
+	raw := `[{
+		"type": "recurring",
+		"recurring": {
+			"every": 100,
+			"count": 3,
+			"start_step": 50,
+			"event": {"type": "restart", "container": "rippled-*", "recover_after": 5}
+		}
+	}]`
+	env := ScheduleEnv{Nodes: []string{"rippled-0", "rippled-1"}, Seed: 42}
+	entries, err := ParseSchedule(raw, &fakeRuntime{}, env)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("want 3 expanded entries, got %d", len(entries))
+	}
+	wantSteps := []int{50, 150, 250}
+	for i, e := range entries {
+		if e.TriggerStep != wantSteps[i] {
+			t.Errorf("entry %d: step %d, want %d", i, e.TriggerStep, wantSteps[i])
+		}
+		if !strings.HasPrefix(e.Apply.Name(), "restart:rippled-") {
+			t.Errorf("entry %d: name %q, want restart:rippled-*", i, e.Apply.Name())
+		}
+	}
+}
+
+func TestParseSchedule_PlainWildcardResolves(t *testing.T) {
+	raw := `[{"step": 10, "type": "restart", "container": "goxrpl-*", "recover_after": 5}]`
+	env := ScheduleEnv{Nodes: []string{"rippled-0", "goxrpl-0", "goxrpl-1"}, Seed: 7}
+	entries, err := ParseSchedule(raw, &fakeRuntime{}, env)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want 1, got %d", len(entries))
+	}
+	if !strings.HasPrefix(entries[0].Apply.Name(), "restart:goxrpl-") {
+		t.Errorf("name %q didn't resolve to a goxrpl-* target", entries[0].Apply.Name())
 	}
 }
