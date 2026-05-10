@@ -8,13 +8,15 @@ DASHBOARD_PORT = 8080
 RPC_PORT = 5005
 WS_PORT = 6006
 
-def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
+def launch(plan, rippled_nodes, alt_nodes, dashboard_files):
     """Launch the monitoring dashboard.
 
     Args:
         plan: Kurtosis plan object.
         rippled_nodes: List of rippled node descriptors.
-        goxrpl_nodes: List of goXRPL node descriptors.
+        alt_nodes: List of non-rippled node descriptors (goXRPL, rxrpl, …).
+            Each descriptor must carry a `type` field used to label the
+            dashboard entry.
         dashboard_files: Files artifact containing dashboard code.
 
     Returns:
@@ -31,10 +33,10 @@ def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
                 name = node["name"], rpc = RPC_PORT, ws = WS_PORT,
             ),
         )
-    for node in goxrpl_nodes:
+    for node in alt_nodes:
         nodes_json.append(
-            '{{"name":"{name}","type":"goxrpl","rpc":"http://{name}:{rpc}","ws":"ws://{name}:{ws}"}}'.format(
-                name = node["name"], rpc = RPC_PORT, ws = WS_PORT,
+            '{{"name":"{name}","type":"{type}","rpc":"http://{name}:{rpc}","ws":"ws://{name}:{ws}"}}'.format(
+                name = node["name"], type = node["type"], rpc = RPC_PORT, ws = WS_PORT,
             ),
         )
 

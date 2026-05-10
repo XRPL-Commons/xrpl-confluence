@@ -22,7 +22,7 @@ RPC_PORT = 5005
 WS_PORT = 6006
 
 
-def generate_network_config(plan, rippled_count, goxrpl_count):
+def generate_network_config(plan, rippled_count, goxrpl_count, rxrpl_count = 0):
     """Generate shared network configuration for all nodes.
 
     Creates per-node config files with validator keys, peer lists, and
@@ -32,18 +32,20 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
         plan: Kurtosis plan object.
         rippled_count: Number of rippled nodes.
         goxrpl_count: Number of goXRPL nodes.
+        rxrpl_count: Number of rxrpl nodes (default: 0).
 
     Returns:
         A files artifact containing configuration for all nodes.
     """
-    total = rippled_count + goxrpl_count
+    total = rippled_count + goxrpl_count + rxrpl_count
     if total > len(VALIDATOR_KEYS):
         fail("Requested {} nodes but only {} validator keys are available".format(total, len(VALIDATOR_KEYS)))
 
     # Build service name lists
     rippled_names = ["rippled-{}".format(i) for i in range(rippled_count)]
     goxrpl_names = ["goxrpl-{}".format(i) for i in range(goxrpl_count)]
-    all_names = rippled_names + goxrpl_names
+    rxrpl_names = ["rxrpl-{}".format(i) for i in range(rxrpl_count)]
+    all_names = rippled_names + goxrpl_names + rxrpl_names
 
     # Collect all validator public keys
     all_pubkeys = [VALIDATOR_KEYS[i]["pubkey"] for i in range(total)]
@@ -67,6 +69,17 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
             index = i,
             node_key = VALIDATOR_KEYS[key_index],
             peers = peers,
+        )
+
+    # Per-node rxrpl configs
+    for i in range(rxrpl_count):
+        key_index = rippled_count + goxrpl_count + i
+        peers = [name for name in all_names if name != rxrpl_names[i]]
+        config_files["rxrpl-{}.toml".format(i)] = _render_rxrpl_config(
+            index = i,
+            node_key = VALIDATOR_KEYS[key_index],
+            peers = peers,
+            trusted_pubkeys = all_pubkeys,
         )
 
     # Shared validators files
@@ -289,6 +302,63 @@ zero_basefee_transaction_feelevel = 256000
         rpc_port = RPC_PORT,
         ws_port = WS_PORT,
         peer_port = PEER_PORT,
+    )
+
+
+def _render_rxrpl_config(index, node_key, peers, trusted_pubkeys):
+    """Render a complete rxrpl node.toml for a private test network node.
+
+    rxrpl uses a different TOML schema than goXRPL: trusted validator
+    pubkeys live inline in `[validators].trusted` (not in a separate
+    validators file), and the signing seed is provided via
+    `[validator_identity].master_secret`.
+    """
+    fixed_peers_entries = ""
+    for i, peer in enumerate(peers):
+        comma = "," if i < len(peers) - 1 else ""
+        fixed_peers_entries += '    "{}:{}"{}\n'.format(peer, PEER_PORT, comma)
+
+    trusted_entries = ""
+    for i, key in enumerate(trusted_pubkeys):
+        comma = "," if i < len(trusted_pubkeys) - 1 else ""
+        trusted_entries += '    "{}"{}\n'.format(key, comma)
+
+    return """\
+[server]
+bind = "0.0.0.0:{rpc_port}"
+admin_ips = ["0.0.0.0"]
+
+[peer]
+port = {peer_port}
+max_peers = 21
+seeds = []
+fixed_peers = [
+{fixed_peers}]
+tls_enabled = false
+
+[database]
+path = "/var/lib/rxrpl/db-{index}"
+backend = "memory"
+online_delete = 256
+
+[validators]
+enabled = true
+trusted = [
+{trusted}]
+
+[validator_identity]
+master_secret = "{seed}"
+
+[network]
+network_id = {network_id}
+""".format(
+        index = index,
+        rpc_port = RPC_PORT,
+        peer_port = PEER_PORT,
+        fixed_peers = fixed_peers_entries,
+        trusted = trusted_entries,
+        seed = node_key["seed"],
+        network_id = NETWORK_ID,
     )
 
 
