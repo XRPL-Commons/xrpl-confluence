@@ -32,7 +32,11 @@ def launch(plan, count, image, network_config, name_prefix = "rxrpl"):
             files = {
                 "/etc/rxrpl": network_config,
             },
-            cmd = ["server", "--config", "/etc/rxrpl/rxrpl-{}.toml".format(i)],
+            # Override the image ENTRYPOINT so we invoke the binary with our
+            # own flags (skip any env-var config bootstrap shipped with the
+            # image — confluence already provides a complete TOML).
+            entrypoint = ["rxrpl"],
+            cmd = ["run", "--mode", "network", "--config", "/etc/rxrpl/rxrpl-{}.toml".format(i)],
         )
 
     services = plan.add_services(configs)

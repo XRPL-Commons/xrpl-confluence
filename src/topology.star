@@ -348,6 +348,10 @@ trusted = [
 
 [validator_identity]
 master_secret = "{seed}"
+# rxrpl requires an ephemeral signing seed alongside the master_secret.
+# For the test harness we reuse the same seed; in production the
+# ephemeral key would be rotated independently.
+ephemeral_seed = "{seed}"
 
 [network]
 network_id = {network_id}
