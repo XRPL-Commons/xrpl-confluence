@@ -190,6 +190,103 @@
   }
   renderers.push(renderTopology);
 
+  // ── Timeline ────────────────────────────────────────────────
+  const MAX_TIMELINE = 80;
+  const prevValidatedSeqs = {};
+  const prevClosedSeqs = {};
+  const closeRows = new Map(); // seq → { time, hash, byNode: Map<name, "match"|"diverged"> }
+  let pendingNew = 0;
+  let timelinePinned = false;
+
+  function pushTimelineEvents(nodes) {
+    const now = new Date();
+    for (const n of nodes) {
+      if (n.status !== "ok") continue;
+      const v = n.validated_ledger?.seq;
+      if (v != null && prevValidatedSeqs[n.name] !== v) {
+        prevValidatedSeqs[n.name] = v;
+        const row = closeRows.get(v) || { time: now, hash: n.validated_ledger.hash || "", byNode: new Map() };
+        const hashSeen = row.hash || n.validated_ledger.hash || "";
+        const diverged = hashSeen && n.validated_ledger.hash && hashSeen !== n.validated_ledger.hash;
+        row.byNode.set(n.name, diverged ? "diverged" : "match");
+        row.hash = hashSeen;
+        if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
+      }
+      const c = n.closed_ledger?.seq;
+      if (!v && c != null && prevClosedSeqs[n.name] !== c) {
+        prevClosedSeqs[n.name] = c;
+        const row = closeRows.get(c) || { time: now, hash: "", byNode: new Map() };
+        row.byNode.set(n.name, "match");
+        if (!closeRows.has(c)) { closeRows.set(c, row); pendingNew += 1; }
+      }
+    }
+    if (closeRows.size > MAX_TIMELINE) {
+      const seqs = [...closeRows.keys()].sort((a, b) => a - b);
+      while (seqs.length && closeRows.size > MAX_TIMELINE) {
+        closeRows.delete(seqs.shift());
+      }
+    }
+  }
+
+  function renderTimeline(data) {
+    pushTimelineEvents(data.nodes || []);
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    const seqs = [...closeRows.keys()].sort((a, b) => a - b);
+
+    if (!seqs.length) {
+      list.innerHTML = `<div class="timeline-empty">Waiting for ledger closes…</div>`;
+      chip.hidden = true;
+      return;
+    }
+    const nodeNames = (data.nodes || []).map((n) => n.name);
+    const html = seqs.map((seq) => {
+      const row = closeRows.get(seq);
+      const time = row.time.toLocaleTimeString("en-US", { hour12: false });
+      const hash = row.hash ? row.hash.slice(0, 12) + "…" : "";
+      const dots = nodeNames.map((name) => {
+        const status = row.byNode.get(name);
+        if (!status) return `<span style="background:var(--rule)"></span>`;
+        return `<span class="${status === "diverged" ? "diverged" : ""}"></span>`;
+      }).join("");
+      return `<div class="timeline-row" data-seq="${seq}">
+        <div class="timeline-seq">${seq.toLocaleString("en-US")}</div>
+        <div class="timeline-rule"></div>
+        <div class="timeline-meta">
+          <span>${time}</span>
+          <span class="timeline-hash">${hash}</span>
+          <span class="timeline-dots">${dots}</span>
+        </div>
+      </div>`;
+    }).join("");
+    list.innerHTML = html;
+
+    if (timelinePinned && pendingNew > 0) {
+      document.getElementById("timeline-new-count").textContent = pendingNew;
+      chip.hidden = false;
+    } else {
+      list.scrollTop = list.scrollHeight;
+      pendingNew = 0;
+      chip.hidden = true;
+    }
+  }
+  renderers.push(renderTimeline);
+
+  function wireTimelineScroll() {
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    list.addEventListener("scroll", () => {
+      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
+      timelinePinned = !atBottom;
+      if (atBottom) { chip.hidden = true; pendingNew = 0; }
+    });
+    chip.addEventListener("click", () => {
+      list.scrollTop = list.scrollHeight;
+      chip.hidden = true;
+      pendingNew = 0;
+    });
+  }
+
   // ── Drawer ──────────────────────────────────────────────────
   let drawerName = null;
   let drawerPoll = null;
@@ -285,6 +382,7 @@
 
     document.getElementById("drawer-close").addEventListener("click", closeDrawer);
     wireDrawerResize();
+    wireTimelineScroll();
 
     connectSSE();
     pollOnce();

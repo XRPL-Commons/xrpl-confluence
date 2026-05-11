@@ -227,3 +227,36 @@ body {
 .drawer-logs .ts  { color: var(--mid); }
 .drawer-logs .lvl-ok  { color: var(--cobalt); }
 .drawer-logs .lvl-err { color: var(--red); }
+
+.timeline {
+  border-top: 1px solid var(--ink);
+  max-height: 380px;
+  overflow-y: auto;
+  position: relative;
+}
+.timeline-row {
+  display: grid;
+  grid-template-columns: 120px 1px 1fr;
+  align-items: baseline;
+  border-bottom: 1px solid var(--rule);
+  padding: 10px 0;
+}
+.timeline-seq  { font: 500 18px/1 var(--serif); }
+.timeline-rule { background: var(--ink); align-self: stretch; }
+.timeline-meta { display: flex; gap: 14px; align-items: center; padding-left: 14px; font: 12px/1 var(--mono); color: var(--mid); }
+.timeline-hash { color: var(--ink); }
+.timeline-dots { margin-left: auto; display: flex; gap: 5px; }
+.timeline-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt); transition: background 0.4s ease; }
+.timeline-dots span.diverged { background: var(--red); }
+
+.new-chip {
+  position: sticky; bottom: 8px; align-self: center; margin: 8px auto 0;
+  font: 500 11px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 6px 10px; background: var(--ink); color: var(--paper); border: none; cursor: pointer;
+  display: block;
+}
+.new-chip[hidden] { display: none; }
+.timeline-empty {
+  padding: 36px 0; text-align: center;
+  font: italic 12px/1.4 var(--serif); color: var(--mid);
+}
