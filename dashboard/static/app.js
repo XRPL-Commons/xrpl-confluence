@@ -202,6 +202,54 @@
     }
   });
 
+  // ── Health classification ───────────────────────────────────
+  const HEALTHY = new Set(["full", "proposing", "validating"]);
+  function healthClass(n) {
+    if (n.status !== "ok") return "health-err";
+    return HEALTHY.has(n.server_state) ? "health-ok" : "health-warn";
+  }
+
+  // ── Rail: node list ─────────────────────────────────────────
+  store.subscribe((s) => {
+    const list = document.getElementById("node-list");
+    if (!list) return;
+    const q = s.ui.filters.nodes.trim().toLowerCase();
+    const filtered = (s.nodes || []).filter((n) => !q || n.name.toLowerCase().includes(q));
+    list.innerHTML = filtered.map((n) => `
+      <div class="node-row ${s.ui.selected === n.name ? "selected" : ""}" data-name="${n.name}">
+        <span class="node-pip ${healthClass(n)}"></span>
+        <span class="node-name">${n.name}</span>
+      </div>
+    `).join("");
+    for (const row of list.querySelectorAll(".node-row")) {
+      row.addEventListener("click", () => setSelected(row.dataset.name));
+    }
+  });
+
+  // ── Rail: KPIs ──────────────────────────────────────────────
+  store.subscribe((s) => {
+    const el = document.getElementById("rail-kpis");
+    if (!el) return;
+    const nodes = s.nodes || [];
+    const ok = nodes.filter((n) => n.status === "ok");
+    const seqs = ok.map((n) => n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index).filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const minSeq = seqs.length ? Math.min(...seqs) : null;
+    const convergeArr = ok.map((n) => n.last_close?.converge_time_s).filter((v) => v != null);
+    const converge = convergeArr.length ? `${(convergeArr.reduce((a, b) => a + b, 0) / convergeArr.length).toFixed(1)}s` : "—";
+    const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
+    const divergences = s.fuzz?.divergences_total ?? 0;
+
+    const kpis = [
+      { lbl: "Ledger",   num: maxSeq ? maxSeq.toLocaleString("en-US") : "—" },
+      { lbl: "Converge", num: converge },
+      { lbl: "Spread",   num: spread },
+      { lbl: "Diverge",  num: divergences },
+      { lbl: "Online",   num: `${ok.length} / ${nodes.length}` },
+    ];
+    el.innerHTML = kpis.map((k) => `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num">${k.num}</div></div>`).join("");
+  });
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
@@ -214,6 +262,10 @@
     for (const el of document.querySelectorAll("[data-pane]")) {
       el.addEventListener("mousedown", () => setActivePane(el.dataset.pane));
     }
+    // Rail filter
+    document.getElementById("rail-filter").addEventListener("input", (e) => {
+      store.setFilter({ nodes: e.target.value });
+    });
     // Hash routing
     applyHashToStore();
     window.addEventListener("hashchange", applyHashToStore);
