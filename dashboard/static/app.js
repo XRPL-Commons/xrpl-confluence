@@ -509,7 +509,8 @@
       const ss = data.state;
       const seq = ss.validated_ledger ? `validated #${ss.validated_ledger.seq}`
                 : ss.closed_ledger ? `closed #${ss.closed_ledger.seq}` : "—";
-      stateEl.innerHTML = `<b>${ss.server_state || ss.status || "—"}</b> · ${seq} · peers ${ss.peers ?? "—"} · ${ss.build_version || ""}`;
+      const proposers = ss.last_close?.proposers ?? "—";
+      stateEl.innerHTML = `<b>${ss.server_state || ss.status || "—"}</b> · ${seq} · peers ${ss.peers ?? "—"} · proposers ${proposers} · ${ss.build_version || ""}`;
     } else if (data === null) {
       stateEl.textContent = "Failed to fetch state.";
     } else {
@@ -524,7 +525,9 @@
     entries = entries.filter((e) => f.logLevels[levelOf(e)]);
     const q = f.logs.trim().toLowerCase();
     if (q) entries = entries.filter((e) => (e.message || "").toLowerCase().includes(q) || (e.level || "").toLowerCase().includes(q));
-    if (!entries.length) {
+    if (data === undefined) {
+      logsEl.innerHTML = `<div class="row" style="color:var(--mid)">Loading…</div>`;
+    } else if (!entries.length) {
       logsEl.innerHTML = `<div class="row" style="color:var(--mid)">No log entries.</div>`;
     } else {
       logsEl.innerHTML = entries.map((e) => {
@@ -551,6 +554,9 @@
       prevSelected = s.ui.selected;
       if (s.ui.selected) startInspectorPolling(s.ui.selected); else stopInspectorPolling();
     }
+
+    const inspector = document.getElementById("inspector");
+    inspector.classList.toggle("open", !!s.ui.selected);
 
     if (!s.ui.selected) {
       title.textContent = "Fleet";
