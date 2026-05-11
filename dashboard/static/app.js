@@ -722,6 +722,60 @@
     document.querySelectorAll("[data-pane]").forEach((el) => el.classList.toggle("pane-focus", el.dataset.pane === s.ui.activePane));
   });
 
+  // ── Command palette ─────────────────────────────────────────
+  let paletteFocus = 0;
+
+  function paletteEntries() {
+    const s = store.get();
+    const out = [];
+    for (const n of (s.nodes || [])) out.push({ label: `Node: ${n.name}`, run: () => setSelected(n.name) });
+    for (const v of VIEWS) out.push({ label: `View: ${v}`, run: () => setView(v) });
+    out.push({ label: s.ui.paused ? "Resume" : "Pause", run: () => setPaused(!s.ui.paused) });
+    out.push({ label: "Copy state", run: () => {
+      const t = document.getElementById("inspector-state").innerText;
+      if (t) navigator.clipboard?.writeText(t).catch(() => {});
+    }});
+    return out;
+  }
+
+  function renderPalette(filter) {
+    const list = document.getElementById("palette-list");
+    const q = filter.trim().toLowerCase();
+    const items = paletteEntries().filter((e) => !q || e.label.toLowerCase().includes(q));
+    paletteFocus = items.length ? Math.max(0, Math.min(paletteFocus, items.length - 1)) : 0;
+    list.innerHTML = items.map((e, i) => `<li class="${i === paletteFocus ? "kb-focus" : ""}" data-i="${i}">${e.label}</li>`).join("");
+    for (const li of list.querySelectorAll("li")) {
+      li.addEventListener("click", () => { items[Number(li.dataset.i)].run(); closePalette(); });
+    }
+    return items;
+  }
+
+  function closePalette() {
+    document.getElementById("palette").hidden = true;
+    document.getElementById("palette-input").value = "";
+    paletteFocus = 0;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const palette = document.getElementById("palette");
+    const input = document.getElementById("palette-input");
+    palette.addEventListener("click", (e) => { if (e.target === palette) closePalette(); });
+    input.addEventListener("input", () => renderPalette(input.value));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); paletteFocus += 1; renderPalette(input.value); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); paletteFocus = Math.max(0, paletteFocus - 1); renderPalette(input.value); }
+      else if (e.key === "Enter") {
+        const items = renderPalette(input.value);
+        if (items[paletteFocus]) { items[paletteFocus].run(); closePalette(); }
+      } else if (e.key === "Escape") { closePalette(); }
+    });
+    document.getElementById("palette-btn").addEventListener("click", () => {
+      palette.hidden = false;
+      renderPalette("");
+      input.focus();
+    });
+  });
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
