@@ -261,9 +261,11 @@
         </div>
       </div>`;
     }).join("");
+    const prevScroll = list.scrollTop;
     list.innerHTML = html;
 
     if (timelinePinned && pendingNew > 0) {
+      list.scrollTop = prevScroll;
       document.getElementById("timeline-new-count").textContent = pendingNew;
       chip.hidden = false;
     } else {
@@ -372,7 +374,7 @@
 
   async function openDrawer(name) {
     drawerName = name;
-    document.getElementById("drawer").hidden = false;
+    document.getElementById("drawer").classList.add("open");
     document.getElementById("drawer-title").textContent = `${name} · logs`;
     for (const card of document.querySelectorAll(".node-card")) {
       card.classList.toggle("selected", card.dataset.name === name);
@@ -393,7 +395,9 @@
 
   function closeDrawer() {
     drawerName = null;
-    document.getElementById("drawer").hidden = true;
+    const drawer = document.getElementById("drawer");
+    drawer.classList.remove("open");
+    drawer.style.height = "";
     if (drawerPoll) { clearInterval(drawerPoll); drawerPoll = null; }
     for (const card of document.querySelectorAll(".node-card")) card.classList.remove("selected");
     for (const c of document.querySelectorAll(".topo-node-circle")) c.classList.remove("selected");

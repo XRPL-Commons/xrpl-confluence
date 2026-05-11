@@ -40,7 +40,6 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  transition: max-width 0.18s ease;
 }
 .poster[data-tab="nodes"],
 .poster[data-tab="topology"] { max-width: var(--w-wide); }
@@ -89,7 +88,6 @@ body {
 .panel { display: none; padding: 32px 36px; }
 .panel.active { display: block; }
 
-/* Type — placeholders, refined per panel in later tasks */
 .title    { font: 500 30px/1.1 var(--serif); letter-spacing: -0.01em; margin-bottom: 6px; }
 .subtitle { font: italic 13px/1.4 var(--serif); color: var(--mid); margin-bottom: 28px; }
 .mono     { font-family: var(--mono); }
@@ -163,7 +161,8 @@ body {
 .topo-node-circle           { fill: var(--ink); stroke: var(--paper); stroke-width: 2; transition: fill 0.4s ease; }
 .topo-node-circle.unreachable { fill: var(--red); }
 .topo-node-circle.warn        { fill: var(--mustard); }
-.topo-node-circle.hovered, .topo-node-circle.selected {
+.topo-node-circle.selected,
+.topo-node:hover .topo-node-circle {
   stroke: var(--ink); stroke-width: 3;
 }
 .topo-node-label {
@@ -181,14 +180,17 @@ body {
   background: var(--paper);
   display: flex;
   flex-direction: column;
-  max-height: 60%;
+  max-height: 0;
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: height 0.18s ease-out, max-height 0.18s ease-out, min-height 0.18s ease-out;
+}
+.drawer.open {
   height: 30%;
   min-height: 120px;
-  overflow: hidden;
-  transform: translateY(0);
-  transition: height 0.18s ease;
+  max-height: 60%;
 }
-.drawer[hidden] { display: none; }
 .drawer-resize {
   position: absolute; top: -2px; left: 0; right: 0; height: 4px;
   cursor: ns-resize;
