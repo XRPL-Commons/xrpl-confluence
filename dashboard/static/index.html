@@ -4,97 +4,77 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>XRPL Confluence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="container">
+  <main class="poster" data-tab="overview">
 
-    <header>
-      <div class="logo">
-        <h1>XRPL Confluence</h1>
-        <span class="subtitle">Interop Network Monitor</span>
-      </div>
-      <div id="sync-badge" class="sync-badge pending">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="overview" role="tab">Overview</button>
+      <button class="tab" data-tab="nodes" role="tab">Nodes</button>
+      <button class="tab" data-tab="topology" role="tab">Topology</button>
+      <button class="tab" data-tab="timeline" role="tab">Timeline</button>
+      <button class="tab" data-tab="fuzzer" role="tab">Fuzzer</button>
+      <div class="sync" id="sync-badge">
         <span class="sync-dot"></span>
-        <span id="sync-label">Connecting...</span>
+        <span class="sync-label" id="sync-label">CONNECTING</span>
       </div>
-    </header>
+    </nav>
 
-    <!-- Consensus metrics -->
-    <div class="section-title">Network Overview</div>
-    <div class="consensus-grid">
-      <div class="consensus-card">
-        <div class="consensus-value" id="metric-online">-</div>
-        <div class="consensus-label">Nodes Online</div>
-      </div>
-      <div class="consensus-card">
-        <div class="consensus-value" id="metric-ledger">-</div>
-        <div class="consensus-label">Latest Ledger</div>
-      </div>
-      <div class="consensus-card">
-        <div class="consensus-value" id="metric-validators">-</div>
-        <div class="consensus-label">Proposers</div>
-      </div>
-      <div class="consensus-card">
-        <div class="consensus-value" id="metric-converge">-</div>
-        <div class="consensus-label">Converge Time</div>
-      </div>
-    </div>
+    <section class="panel active" data-panel="overview" role="tabpanel">
+      <h1 class="title">Network Overview.</h1>
+      <p class="subtitle">Live interop status across goXRPL ↔ rippled.</p>
+      <div class="kpis kpis-2x2" id="overview-kpis"></div>
+      <table class="summary" id="overview-summary"><tbody></tbody></table>
+    </section>
 
-    <!-- Node cards -->
-    <div class="section-title">Nodes <span class="hint">(click to inspect)</span></div>
-    <div class="node-grid" id="node-grid">
-      <div class="loading">
-        <div class="loading-spinner"></div>
-        Connecting to nodes...
-      </div>
-    </div>
+    <section class="panel" data-panel="nodes" role="tabpanel">
+      <h1 class="title">Nodes.</h1>
+      <p class="subtitle">Click any card to inspect.</p>
+      <div class="node-grid" id="node-grid"></div>
+    </section>
 
-    <!-- Topology + Log panel side by side -->
-    <div class="topology-section">
-      <div class="section-title">Network Topology</div>
-      <div class="topology-row">
-        <div class="topology-container">
-          <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 340"></svg>
-        </div>
-        <div class="log-panel" id="log-panel">
-          <div class="log-panel-header">
-            <span class="log-panel-title" id="log-panel-title">Select a node</span>
-            <button class="log-panel-close" id="log-panel-close" title="Close">&times;</button>
-          </div>
-          <div class="log-panel-state" id="log-panel-state"></div>
-          <div class="log-panel-logs" id="log-panel-logs">
-            <div class="log-empty">Click a node card or topology node to view its logs.</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <section class="panel" data-panel="topology" role="tabpanel">
+      <h1 class="title">Topology.</h1>
+      <p class="subtitle">Click a node to inspect its logs.</p>
+      <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
+    </section>
 
-    <!-- Ledger timeline -->
-    <div class="timeline-section">
-      <div class="section-title">Ledger Timeline</div>
-      <div class="timeline-container" id="timeline-list">
-        <div class="timeline-empty">Waiting for ledger closes...</div>
-      </div>
-    </div>
+    <section class="panel" data-panel="timeline" role="tabpanel">
+      <h1 class="title">Ledger Timeline.</h1>
+      <p class="subtitle">Latest closes, newest at bottom.</p>
+      <div class="timeline" id="timeline-list"></div>
+      <button class="new-chip" id="timeline-new-chip" hidden>↓ <span id="timeline-new-count">0</span> new</button>
+    </section>
 
-    <!-- Fuzzer panel -->
-    <section id="fuzz-panel">
-      <div class="section-title">Fuzzer</div>
-      <div class="fuzz-grid">
-        <div class="kpi"><div class="label">Submitted</div><div id="fuzz-submitted" class="value">—</div></div>
-        <div class="kpi"><div class="label">Applied</div><div id="fuzz-applied" class="value">—</div></div>
-        <div class="kpi"><div class="label">Divergences</div><div id="fuzz-divergences" class="value">—</div></div>
-        <div class="kpi"><div class="label">Crashes</div><div id="fuzz-crashes" class="value">—</div></div>
-        <div class="kpi"><div class="label">Seed</div><div id="fuzz-seed" class="value">—</div></div>
-      </div>
-      <table id="fuzz-by-layer">
+    <section class="panel" data-panel="fuzzer" role="tabpanel">
+      <h1 class="title">Fuzzer.</h1>
+      <p class="subtitle">Seed <span id="fuzz-seed-inline" class="mono">—</span></p>
+      <div class="kpis kpis-1x5" id="fuzz-kpis"></div>
+      <table class="layers" id="fuzz-by-layer">
         <thead><tr><th>Layer</th><th>Divergences</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
 
-  </div>
+    <aside class="drawer" id="drawer" hidden>
+      <div class="drawer-resize" id="drawer-resize"></div>
+      <header class="drawer-head">
+        <span class="drawer-title" id="drawer-title">—</span>
+        <button class="drawer-close" id="drawer-close" aria-label="Close">✕</button>
+      </header>
+      <div class="drawer-state" id="drawer-state"></div>
+      <div class="drawer-logs" id="drawer-logs"></div>
+    </aside>
+
+    <footer class="footer">
+      <span class="footer-line">Last update · <span id="footer-age">—</span> <span id="footer-ctx"></span></span>
+    </footer>
+
+  </main>
   <script src="/app.js"></script>
 </body>
 </html>
