@@ -1,0 +1,13 @@
+{
+  "txs_submitted_total": 12450,
+  "txs_applied_total": 12421,
+  "divergences_total": 7,
+  "crashes_total": 1,
+  "current_seed": "f3a1c8d2",
+  "divergences_total_by_layer": {
+    "consensus": 3,
+    "ledger": 2,
+    "tx-engine": 1,
+    "amm": 1
+  }
+}
