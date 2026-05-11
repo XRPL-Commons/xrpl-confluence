@@ -17,6 +17,9 @@ def launch(plan, count, image, network_config, name_prefix = "rxrpl"):
     Returns:
         List of node descriptors with service references.
     """
+    if count == 0:
+        return []
+
     nodes = []
     configs = {}
 
@@ -27,7 +30,7 @@ def launch(plan, count, image, network_config, name_prefix = "rxrpl"):
             ports = {
                 "peer": PortSpec(number = PEER_PORT, transport_protocol = "TCP", wait = None),
                 "rpc": PortSpec(number = RPC_PORT, transport_protocol = "TCP", application_protocol = "http"),
-                "ws": PortSpec(number = WS_PORT, transport_protocol = "TCP"),
+                "ws": PortSpec(number = WS_PORT, transport_protocol = "TCP", wait = None),
             },
             files = {
                 "/etc/rxrpl": network_config,

@@ -17,6 +17,9 @@ def launch(plan, count, image, network_config, name_prefix = "goxrpl"):
     Returns:
         List of node descriptors with service references.
     """
+    if count == 0:
+        return []
+
     nodes = []
     configs = {}
 
