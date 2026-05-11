@@ -1,7 +1,8 @@
 // Package forkdebug provides fork-investigation tooling for mixed
 // rippled/goXRPL networks: locate the first divergent ledger seq,
-// dump the tx-set at a known fork seq, and tail goXRPL consensus
-// logs for close-time vote / mode-change visibility.
+// dump the tx-set at a known fork seq, tail goXRPL consensus logs
+// for close-time vote / mode-change visibility, and detect
+// liveness stalls.
 //
 // Built against lessons from the issue #401 5-validator UNL
 // bootstrap stall, where finding the first-divergent seq across 5
@@ -17,9 +18,39 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/oracle"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
+
+// nodeHash mirrors the (name, ledger_hash, account_hash, transaction_hash)
+// quadruple we collect per-node per-seq. Defined locally instead of
+// reusing oracle.NodeHash so the package can compile without importing
+// oracle.
+type nodeHash struct {
+	Name            string `json:"name"`
+	LedgerHash      string `json:"ledger_hash"`
+	AccountHash     string `json:"account_hash"`
+	TransactionHash string `json:"transaction_hash"`
+}
+
+// divergence describes a hash mismatch between two nodes at the
+// same seq for a specific field.
+type divergence struct {
+	Field string `json:"field"`
+	NodeA string `json:"node_a"`
+	HashA string `json:"hash_a"`
+	NodeB string `json:"node_b"`
+	HashB string `json:"hash_b"`
+}
+
+// LedgerComparison is the per-seq result of querying every node.
+// Public so the CLI can render and JSON-encode it.
+type LedgerComparison struct {
+	Sequence    int          `json:"sequence"`
+	Agreed      bool         `json:"agreed"`
+	NodeHashes  []nodeHash   `json:"node_hashes"`
+	Divergences []divergence `json:"divergences,omitempty"`
+	Errors      []string     `json:"errors,omitempty"`
+}
 
 // Node names a single XRPL RPC endpoint for the scanner.
 type Node struct {
@@ -35,22 +66,33 @@ type Node struct {
 // was observed in the swept range (or every node was missing at
 // least one seq, see Errors).
 type ScanResult struct {
-	FromSeq  int                  `json:"from_seq"`
-	ToSeq    int                  `json:"to_seq"`
-	Compared int                  `json:"compared"`
+	FromSeq  int `json:"from_seq"`
+	ToSeq    int `json:"to_seq"`
+	Compared int `json:"compared"`
 	// FirstFork is the first ledger seq where any pair of nodes
 	// disagreed on any root hash. Nil if the swept range was fully
 	// consistent (or no comparisons could complete).
-	FirstFork *oracle.LedgerComparison `json:"first_fork,omitempty"`
+	FirstFork *LedgerComparison `json:"first_fork,omitempty"`
 	// LastAgreed is the highest seq < FirstFork.Sequence where all
 	// nodes agreed. Useful to know "fork is between seq=N and N+1".
-	LastAgreed *oracle.LedgerComparison `json:"last_agreed,omitempty"`
-	Errors     []string                 `json:"errors,omitempty"`
+	LastAgreed *LedgerComparison `json:"last_agreed,omitempty"`
+	Errors     []string          `json:"errors,omitempty"`
 }
 
-// Scanner walks a sequence range and locates the first fork.
+// scannerNode is the in-package representation of a node with a
+// pre-built RPC client.
+type scannerNode struct {
+	Name   string
+	Client *rpcclient.Client
+}
+
+// Scanner walks a sequence range and locates the first fork by
+// querying each node's `ledger seq=N` directly — without waiting
+// for validation. This matters: the use case is "the network is
+// stuck, where did it diverge?", where any wait-for-validated
+// loop hangs forever.
 type Scanner struct {
-	oracle *oracle.Oracle
+	nodes []scannerNode
 }
 
 // NewScanner builds a scanner over the given nodes.
@@ -58,17 +100,69 @@ func NewScanner(nodes []Node) (*Scanner, error) {
 	if len(nodes) < 2 {
 		return nil, errors.New("scan needs at least 2 nodes")
 	}
-	oracleNodes := make([]oracle.Node, 0, len(nodes))
+	out := make([]scannerNode, 0, len(nodes))
 	for _, n := range nodes {
 		if n.Name == "" || n.URL == "" {
 			return nil, fmt.Errorf("node missing name or URL: %+v", n)
 		}
-		oracleNodes = append(oracleNodes, oracle.Node{
-			Name:   n.Name,
-			Client: rpcclient.New(n.URL),
+		out = append(out, scannerNode{Name: n.Name, Client: rpcclient.New(n.URL)})
+	}
+	return &Scanner{nodes: out}, nil
+}
+
+// compareAtSequence queries every node for `ledger seq=N` directly
+// (no wait-for-validation gate) and computes which fields differ.
+func (s *Scanner) compareAtSequence(seq int) *LedgerComparison {
+	cmp := &LedgerComparison{Sequence: seq, Agreed: true}
+
+	for _, n := range s.nodes {
+		l, err := n.Client.Ledger(seq)
+		if err != nil {
+			cmp.Errors = append(cmp.Errors, fmt.Sprintf("%s: %v", n.Name, err))
+			cmp.Agreed = false
+			continue
+		}
+		cmp.NodeHashes = append(cmp.NodeHashes, nodeHash{
+			Name:            n.Name,
+			LedgerHash:      l.LedgerHash,
+			AccountHash:     l.AccountHash,
+			TransactionHash: l.TransactionHash,
 		})
 	}
-	return &Scanner{oracle: oracle.New(oracleNodes)}, nil
+
+	if len(cmp.NodeHashes) < 2 {
+		return cmp
+	}
+
+	ref := cmp.NodeHashes[0]
+	for i := 1; i < len(cmp.NodeHashes); i++ {
+		nh := cmp.NodeHashes[i]
+		if nh.LedgerHash != ref.LedgerHash {
+			cmp.Agreed = false
+			cmp.Divergences = append(cmp.Divergences, divergence{
+				Field: "ledger_hash",
+				NodeA: ref.Name, HashA: ref.LedgerHash,
+				NodeB: nh.Name, HashB: nh.LedgerHash,
+			})
+		}
+		if nh.AccountHash != ref.AccountHash {
+			cmp.Agreed = false
+			cmp.Divergences = append(cmp.Divergences, divergence{
+				Field: "account_hash",
+				NodeA: ref.Name, HashA: ref.AccountHash,
+				NodeB: nh.Name, HashB: nh.AccountHash,
+			})
+		}
+		if nh.TransactionHash != ref.TransactionHash {
+			cmp.Agreed = false
+			cmp.Divergences = append(cmp.Divergences, divergence{
+				Field: "transaction_hash",
+				NodeA: ref.Name, HashA: ref.TransactionHash,
+				NodeB: nh.Name, HashB: nh.TransactionHash,
+			})
+		}
+	}
+	return cmp
 }
 
 // FindFirstFork sweeps [from, to] inclusive and returns the first
@@ -103,7 +197,7 @@ func (s *Scanner) FindFirstFork(ctx context.Context, from, to int) *ScanResult {
 			result.Errors = append(result.Errors, fmt.Sprintf("cancelled at seq=%d: %v", seq, ctx.Err()))
 			return result
 		}
-		cmp := s.oracle.CompareAtSequence(ctx, seq)
+		cmp := s.compareAtSequence(seq)
 		result.Compared++
 
 		// Real fork = ≥2 successful responses that disagree.
@@ -128,10 +222,8 @@ func (s *Scanner) FindFirstFork(ctx context.Context, from, to int) *ScanResult {
 
 // isRealFork distinguishes a true fork (two responding nodes saw
 // two different ledger/account/tx hashes) from a no-op (only one
-// or zero nodes responded with data). Pre-condition: cmp is the
-// raw output of oracle.CompareAtSequence, where cmp.Agreed=true
-// only if every node responded AND every responding node agreed.
-func isRealFork(cmp *oracle.LedgerComparison) bool {
+// or zero nodes responded with data).
+func isRealFork(cmp *LedgerComparison) bool {
 	if cmp == nil || cmp.Agreed {
 		return false
 	}
@@ -173,7 +265,7 @@ func FormatScanResult(r *ScanResult) string {
 	}
 	fmt.Fprintf(&b, "  per-node hashes:\n")
 	// Sort by name for stable output.
-	sorted := make([]oracle.NodeHash, len(r.FirstFork.NodeHashes))
+	sorted := make([]nodeHash, len(r.FirstFork.NodeHashes))
 	copy(sorted, r.FirstFork.NodeHashes)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	for _, nh := range sorted {

@@ -3,8 +3,6 @@ package forkdebug
 import (
 	"strings"
 	"testing"
-
-	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/oracle"
 )
 
 // TestNewScanner_Validation rejects the misconfigurations a CLI
@@ -41,7 +39,7 @@ func TestFormatScanResult_NoFork(t *testing.T) {
 		FromSeq:    1,
 		ToSeq:      40,
 		Compared:   40,
-		LastAgreed: &oracle.LedgerComparison{Sequence: 40, Agreed: true},
+		LastAgreed: &LedgerComparison{Sequence: 40, Agreed: true},
 	}
 	out := FormatScanResult(r)
 	for _, must := range []string{"Scanned seq=[1..40]", "40 ledgers compared", "No fork detected", "Last agreed seq: 40"} {
@@ -59,15 +57,15 @@ func TestFormatScanResult_NoFork(t *testing.T) {
 func TestFormatScanResult_ForkLayout(t *testing.T) {
 	r := &ScanResult{
 		FromSeq: 1, ToSeq: 50, Compared: 18,
-		LastAgreed: &oracle.LedgerComparison{Sequence: 17, Agreed: true},
-		FirstFork: &oracle.LedgerComparison{
+		LastAgreed: &LedgerComparison{Sequence: 17, Agreed: true},
+		FirstFork: &LedgerComparison{
 			Sequence: 18,
 			Agreed:   false,
-			NodeHashes: []oracle.NodeHash{
+			NodeHashes: []nodeHash{
 				{Name: "rippled-0", LedgerHash: "AABBCC0011223344", AccountHash: "11", TransactionHash: "22"},
 				{Name: "goxrpl-0", LedgerHash: "FFEEDD9988776655", AccountHash: "33", TransactionHash: "22"},
 			},
-			Divergences: []oracle.Divergence{
+			Divergences: []divergence{
 				{Field: "ledger_hash", NodeA: "rippled-0", HashA: "AABBCC0011223344",
 					NodeB: "goxrpl-0", HashB: "FFEEDD9988776655"},
 				{Field: "account_hash", NodeA: "rippled-0", HashA: "11",
@@ -113,14 +111,14 @@ func TestFormatScanResult_ForkLayout(t *testing.T) {
 func TestIsRealFork(t *testing.T) {
 	cases := []struct {
 		name string
-		cmp  *oracle.LedgerComparison
+		cmp  *LedgerComparison
 		want bool
 	}{
 		{"nil", nil, false},
-		{"agreed", &oracle.LedgerComparison{Agreed: true}, false},
+		{"agreed", &LedgerComparison{Agreed: true}, false},
 		{
 			name: "all errors no hashes",
-			cmp: &oracle.LedgerComparison{
+			cmp: &LedgerComparison{
 				Agreed: false,
 				Errors: []string{"a: not found", "b: not found"},
 			},
@@ -128,9 +126,9 @@ func TestIsRealFork(t *testing.T) {
 		},
 		{
 			name: "two responded same hash, third errored — not a fork",
-			cmp: &oracle.LedgerComparison{
+			cmp: &LedgerComparison{
 				Agreed: false, // oracle flags this because of the error
-				NodeHashes: []oracle.NodeHash{
+				NodeHashes: []nodeHash{
 					{Name: "a", LedgerHash: "ABCD"},
 					{Name: "b", LedgerHash: "ABCD"},
 				},
@@ -141,13 +139,13 @@ func TestIsRealFork(t *testing.T) {
 		},
 		{
 			name: "real divergence between two responders",
-			cmp: &oracle.LedgerComparison{
+			cmp: &LedgerComparison{
 				Agreed: false,
-				NodeHashes: []oracle.NodeHash{
+				NodeHashes: []nodeHash{
 					{Name: "a", LedgerHash: "AAAA"},
 					{Name: "b", LedgerHash: "BBBB"},
 				},
-				Divergences: []oracle.Divergence{
+				Divergences: []divergence{
 					{Field: "ledger_hash", NodeA: "a", HashA: "AAAA", NodeB: "b", HashB: "BBBB"},
 				},
 			},

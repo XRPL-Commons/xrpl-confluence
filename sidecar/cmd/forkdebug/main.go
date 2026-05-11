@@ -10,6 +10,8 @@
 //	tap       parse goxrpl structured consensus logs from stdin and emit
 //	          one-line summaries (close-time votes, mode changes, accept-ct,
 //	          ledger-built, validate emit/skip)
+//	stalled   poll every node's validated_seq for a window and report
+//	          whether the chain is making forward progress
 //
 // Examples:
 //
@@ -39,6 +41,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/forkdebug"
 )
@@ -59,6 +62,8 @@ func main() {
 		runIsolate(args)
 	case "tap":
 		runTap(args)
+	case "stalled":
+		runStalled(args)
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 	default:
@@ -75,6 +80,7 @@ USAGE
     forkdebug scan     --from N --to M --node name=URL [--node ...]
     forkdebug isolate  --seq N --node name=URL [--json|--summary]
     forkdebug tap      [< logfile | docker logs ... | forkdebug tap]
+    forkdebug stalled  --window 30s --node name=URL [--node ...]
 
 Run "forkdebug <cmd> -h" for subcommand flags.
 `)
@@ -181,5 +187,42 @@ func runTap(args []string) {
 	if err := forkdebug.Tap(os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "tap:", err)
 		os.Exit(1)
+	}
+}
+
+func runStalled(args []string) {
+	fs := flag.NewFlagSet("stalled", flag.ExitOnError)
+	window := fs.Duration("window", 30*time.Second, "observation window (e.g. 30s, 2m)")
+	interval := fs.Duration("interval", 3*time.Second, "poll interval inside the window")
+	asJSON := fs.Bool("json", false, "emit JSON instead of human-readable summary")
+	var nodes nodeListFlag
+	fs.Var(&nodes, "node", "node spec, name=URL (repeat flag for each node, min 1)")
+	_ = fs.Parse(args)
+
+	if len(nodes) < 1 {
+		fmt.Fprintln(os.Stderr, "stalled: need at least 1 --node flag")
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	det, err := forkdebug.NewStallDetector(nodes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "stalled:", err)
+		os.Exit(1)
+	}
+	res := det.Watch(ctx, *window, *interval)
+
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(res)
+	} else {
+		fmt.Print(forkdebug.FormatStallResult(res))
+	}
+	if res.Stalled {
+		os.Exit(1) // non-zero so CI can gate on it
 	}
 }
