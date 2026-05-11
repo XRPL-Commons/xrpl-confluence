@@ -124,6 +124,41 @@
   }
   renderers.push(renderOverview);
 
+  // ── Nodes ───────────────────────────────────────────────────
+  const HEALTHY = new Set(["full", "proposing", "validating"]);
+  function healthClass(n) {
+    if (n.status !== "ok") return "health-err";
+    return HEALTHY.has(n.server_state) ? "health-ok" : "health-warn";
+  }
+
+  function renderNodes(data) {
+    const grid = document.getElementById("node-grid");
+    grid.innerHTML = (data.nodes || []).map((n) => {
+      const seq = n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index ?? "—";
+      const peers = n.status === "ok" ? n.peers ?? "—" : "—";
+      const lag = n.validated_ledger?.age != null ? `${n.validated_ledger.age}s` : "—";
+      const id = n.status === "ok" ? (n.build_version || "—") : (n.error || "offline");
+      return `
+        <article class="node-card ${healthClass(n)}" data-name="${n.name}">
+          <div class="node-name">${n.name}</div>
+          <div class="node-id">${id}</div>
+          <div class="node-mini">
+            <div><div class="l">Ledger</div><div class="v">${typeof seq === "number" ? seq.toLocaleString("en-US") : seq}</div></div>
+            <div><div class="l">Peers</div><div class="v">${peers}</div></div>
+            <div><div class="l">Lag</div><div class="v">${lag}</div></div>
+          </div>
+        </article>`;
+    }).join("");
+
+    for (const card of grid.querySelectorAll(".node-card")) {
+      card.addEventListener("click", () => openDrawer(card.dataset.name));
+    }
+  }
+  renderers.push(renderNodes);
+
+  // Placeholder until Task 8 implements it
+  function openDrawer(name) { console.log("openDrawer", name); }
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     for (const el of document.querySelectorAll(".tab")) {
