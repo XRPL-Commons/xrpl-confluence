@@ -135,8 +135,6 @@ protocol=ws
 [node_db]
 type=NuDB
 path=/var/lib/rippled/db/nudb
-online_delete=256
-advisory_delete=0
 
 [database_path]
 /var/lib/rippled/db
@@ -175,10 +173,15 @@ time.nist.gov
 pool.ntp.org
 
 [rpc_startup]
-{{"command": "log_level", "severity": "warning"}}
+{{"command": "log_level", "severity": "info"}}
+{{"command": "log_level", "partition": "LedgerConsensus", "severity": "debug"}}
+{{"command": "log_level", "partition": "Ledger", "severity": "debug"}}
+{{"command": "log_level", "partition": "TransactionEngine", "severity": "debug"}}
+{{"command": "log_level", "partition": "Validations", "severity": "debug"}}
+{{"command": "log_level", "partition": "TxQ", "severity": "debug"}}
 
 [ledger_history]
-256
+full
 
 [ssl_verify]
 0
