@@ -273,3 +273,29 @@ body {
 .layers tbody td { padding: 10px 0; font: 14px/1.3 var(--sans); border-bottom: 1px solid var(--rule); }
 .layers tbody td:last-child { text-align: right; font: 500 18px/1 var(--serif); }
 .layers tbody tr.crashed td:first-child { border-left: 2px solid var(--red); padding-left: 10px; }
+
+@media (max-width: 1040px) {
+  .poster[data-tab="nodes"],
+  .poster[data-tab="topology"] { max-width: 100%; }
+  body { padding: 32px 16px; }
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; }
+}
+
+@media (max-width: 640px) {
+  .panel { padding: 24px 20px; }
+  .kpis-2x2 { grid-template-columns: 1fr; gap: 18px; }
+  .kpis-1x5 { grid-template-columns: 1fr 1fr; gap: 18px; }
+  .node-grid { grid-template-columns: 1fr; }
+  .footer { padding-left: 20px; padding-right: 20px; }
+  .drawer { height: 50%; }
+  .drawer-head, .drawer-state, .drawer-logs { padding-left: 20px; padding-right: 20px; }
+}
+
+@media print {
+  body { background: var(--paper); padding: 0; }
+  .poster { border: none; max-width: 100%; }
+  .sync, .footer, .drawer, .new-chip { display: none !important; }
+  .tabs .tab { border: none; padding: 4px 8px; }
+  .tabs .tab:not(.active) { display: none; }
+}
