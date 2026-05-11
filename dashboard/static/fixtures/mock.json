@@ -1,0 +1,31 @@
+{
+  "nodes": [
+    {
+      "name": "rippled-0", "type": "rippled", "status": "ok", "server_state": "proposing",
+      "validated_ledger": { "seq": 8421902, "hash": "A1B2C3D4E5F60718", "age": 2 },
+      "ledger_current_index": 8421903, "peers": 4, "uptime": 3725, "build_version": "2.5.0",
+      "last_close": { "proposers": 5, "converge_time_s": 3.2 }
+    },
+    {
+      "name": "rippled-1", "type": "rippled", "status": "ok", "server_state": "proposing",
+      "validated_ledger": { "seq": 8421902, "hash": "A1B2C3D4E5F60718", "age": 2 },
+      "ledger_current_index": 8421903, "peers": 4, "uptime": 3725, "build_version": "2.5.0",
+      "last_close": { "proposers": 5, "converge_time_s": 3.2 }
+    },
+    {
+      "name": "rippled-2", "type": "rippled", "status": "ok", "server_state": "full",
+      "validated_ledger": { "seq": 8421901, "hash": "BEEFCAFED00D1234", "age": 5 },
+      "ledger_current_index": 8421902, "peers": 4, "uptime": 3725, "build_version": "2.5.0",
+      "last_close": { "proposers": 5, "converge_time_s": 3.2 }
+    },
+    {
+      "name": "goxrpl-0", "type": "goxrpl", "status": "ok", "server_state": "validating",
+      "validated_ledger": { "seq": 8421902, "hash": "A1B2C3D4E5F60718", "age": 2 },
+      "ledger_current_index": 8421903, "peers": 4, "uptime": 1820, "build_version": "0.9.0-dev",
+      "last_close": { "proposers": 5, "converge_time_s": 3.6 }
+    },
+    {
+      "name": "goxrpl-1", "type": "goxrpl", "status": "unreachable", "error": "connection refused"
+    }
+  ]
+}

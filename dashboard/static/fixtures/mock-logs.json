@@ -1,0 +1,14 @@
+{
+  "state": {
+    "status": "ok", "server_state": "proposing",
+    "validated_ledger": { "seq": 8421902, "hash": "A1B2C3D4", "age": 2 },
+    "peers": 4, "build_version": "2.5.0", "complete_ledgers": "8420000-8421902",
+    "last_close": { "proposers": 5, "converge_time_s": 3.2 }
+  },
+  "logs": [
+    { "ts": "2026-05-11T10:58:01.123Z", "level": "proposing", "message": "closed ledger 8421901" },
+    { "ts": "2026-05-11T10:58:04.456Z", "level": "validating", "message": "accepted proposal" },
+    { "ts": "2026-05-11T10:58:05.789Z", "level": "proposing", "message": "closed ledger 8421902 hash A1B2..." },
+    { "ts": "2026-05-11T10:58:08.012Z", "level": "info", "message": "peers=4 latency=42ms" }
+  ]
+}

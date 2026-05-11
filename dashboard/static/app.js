@@ -1,488 +1,446 @@
 (() => {
   "use strict";
 
-  const MAX_TIMELINE = 80;
-  // Track validated and closed seqs separately. Mixing them in a single
-  // map causes seq to appear to regress (e.g. closed=6 logged, then a
-  // genuine validated=4 arrives with its hash — looks like "6 → 4"
-  // when really the 6 never had quorum behind it.)
-  let prevValidatedSeqs = {};
-  let prevClosedSeqs = {};
-  let timelineEntries = [];
-  let selectedNode = null;
-  let logPollInterval = null;
+  const TABS = ["overview", "nodes", "topology", "timeline", "fuzzer"];
+  const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
-  // Inline SVG logos
-  const LOGO_CPP = `<svg viewBox="0 0 32 32" class="node-logo"><rect x="2" y="4" width="28" height="24" rx="4" fill="#659AD2"/><rect x="2" y="4" width="28" height="12" rx="4" fill="#00599C"/><rect x="2" y="12" width="28" height="4" fill="#00599C"/><text x="16" y="20" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="12" fill="#fff">C++</text></svg>`;
-  const LOGO_GO = `<img src="/gopher.svg" class="node-logo" alt="Go">`;
-
-  function logoFor(type) {
-    return type === "rippled" ? LOGO_CPP : LOGO_GO;
+  // ── Tab routing ─────────────────────────────────────────────
+  function currentTab() {
+    const h = location.hash.replace("#", "");
+    return TABS.includes(h) ? h : "overview";
   }
 
-  function topoLogoFor(type, cx, cy) {
-    if (type === "rippled") {
-      return `<g transform="translate(${cx - 10}, ${cy - 8})"><rect x="0" y="1" width="20" height="15" rx="3" fill="#00599C"/><text x="10" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold" font-size="8" fill="#fff">C++</text></g>`;
+  function setTab(name) {
+    if (!TABS.includes(name)) name = "overview";
+    document.querySelector("main.poster").dataset.tab = name;
+    for (const el of document.querySelectorAll(".tab")) {
+      el.classList.toggle("active", el.dataset.tab === name);
     }
-    return `<image href="/gopher.svg" x="${cx - 14}" y="${cy - 16}" width="28" height="32"/>`;
-  }
-
-  // ── Node selection & log panel ──
-
-  function selectNode(name) {
-    selectedNode = name;
-    const panel = document.getElementById("log-panel");
-    panel.classList.add("open");
-    document.getElementById("log-panel-title").textContent = name;
-    fetchLogs(name);
-
-    // Highlight selected card
-    document.querySelectorAll(".node-card").forEach((c) => {
-      c.classList.toggle("selected", c.dataset.name === name);
-    });
-
-    // Start polling logs for selected node
-    if (logPollInterval) clearInterval(logPollInterval);
-    logPollInterval = setInterval(() => fetchLogs(name), 2000);
-  }
-
-  function deselectNode() {
-    selectedNode = null;
-    const panel = document.getElementById("log-panel");
-    panel.classList.remove("open");
-    document.querySelectorAll(".node-card").forEach((c) => c.classList.remove("selected"));
-    if (logPollInterval) {
-      clearInterval(logPollInterval);
-      logPollInterval = null;
+    for (const el of document.querySelectorAll(".panel")) {
+      el.classList.toggle("active", el.dataset.panel === name);
     }
+    if (location.hash.replace("#", "") !== name) location.hash = name;
+    updateFooterContext();
   }
 
-  async function fetchLogs(name) {
-    try {
-      const res = await fetch(`/api/logs/${encodeURIComponent(name)}`);
-      const data = await res.json();
-      renderLogPanel(data);
-    } catch {
-      document.getElementById("log-panel-logs").innerHTML =
-        '<div class="log-empty">Failed to fetch logs.</div>';
+  // ── Data layer ──────────────────────────────────────────────
+  let latest = { nodes: [] };
+  let latestFuzz = null;
+  let lastUpdate = 0;
+  const renderers = []; // pushed by each tab module
+
+  function notify() {
+    lastUpdate = Date.now();
+    for (const fn of renderers) {
+      try { fn(latest, latestFuzz); } catch (e) { console.error(e); }
     }
+    updateFooterContext();
   }
 
-  function renderLogPanel(data) {
-    const stateEl = document.getElementById("log-panel-state");
-    const logsEl = document.getElementById("log-panel-logs");
+  async function fetchJSON(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+    return res.json();
+  }
 
-    // Render current state as formatted JSON
-    if (data.state) {
-      const s = data.state;
-      const seq = s.validated_ledger
-        ? `validated #${s.validated_ledger.seq}`
-        : s.closed_ledger
-          ? `closed #${s.closed_ledger.seq}`
-          : s.ledger_current_index
-            ? `current #${s.ledger_current_index}`
-            : "—";
-      const stateClass = s.status === "ok" ? (["proposing", "full", "validating"].includes(s.server_state) ? "ok" : "warn") : "err";
-
-      stateEl.innerHTML = `
-        <div class="log-state-row">
-          <span class="status-dot ${stateClass}"></span>
-          <strong>${s.server_state || s.status}</strong>
-          <span class="log-state-dim">${seq}</span>
-          <span class="log-state-dim">peers: ${s.peers ?? "—"}</span>
-          <span class="log-state-dim">${s.build_version || ""}</span>
-        </div>
-        <div class="log-state-row log-state-dim">
-          complete: ${s.complete_ledgers || "—"}
-          ${s.last_close ? `| proposers: ${s.last_close.proposers} | converge: ${s.last_close.converge_time_s}s` : ""}
-        </div>
-      `;
-    } else {
-      stateEl.innerHTML = '<span class="log-state-dim">No state available</span>';
-    }
-
-    // Render log entries (newest first)
-    if (!data.logs || data.logs.length === 0) {
-      logsEl.innerHTML = '<div class="log-empty">No log entries yet.</div>';
+  async function pollOnce() {
+    if (MOCK) {
+      latest = await fetchJSON("/fixtures/mock.json");
+      latestFuzz = await fetchJSON("/fixtures/mock-fuzz.json");
+      setSync("connected");
+      notify();
       return;
     }
-
-    const entries = data.logs.slice().reverse();
-    logsEl.innerHTML = entries
-      .map((e) => {
-        const time = e.ts.split("T")[1]?.split(".")[0] || e.ts;
-        const levelClass =
-          e.level === "unreachable" || e.level === "error"
-            ? "log-err"
-            : e.level === "proposing" || e.level === "validating"
-              ? "log-ok"
-              : "log-info";
-        return `<div class="log-line ${levelClass}"><span class="log-ts">${time}</span><span class="log-level">${e.level}</span><span class="log-msg">${e.message}</span></div>`;
-      })
-      .join("");
-
-    // Auto-scroll to top (newest)
-    logsEl.scrollTop = 0;
+    try {
+      latest = await fetchJSON("/api/nodes");
+      setSync("connected");
+    } catch {
+      setSync("reconnecting");
+    }
+    try { latestFuzz = await fetchJSON("/api/fuzz"); } catch { latestFuzz = null; }
+    notify();
   }
 
-  // ── SSE & polling ──
-
   function connectSSE() {
+    if (MOCK) return;
     const es = new EventSource("/events");
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
-        update(data);
+        latest = JSON.parse(e.data);
+        setSync("connected");
+        notify();
       } catch {}
     };
     es.onerror = () => {
+      setSync("offline");
       es.close();
       setTimeout(connectSSE, 3000);
     };
   }
 
-  async function poll() {
-    try {
-      const res = await fetch("/api/nodes");
-      const data = await res.json();
-      update(data);
-    } catch {}
-  }
-
-  function update(data) {
-    const nodes = data.nodes || [];
-    updateSyncBadge(nodes);
-    updateNodeCards(nodes);
-    updateTopology(nodes);
-    updateTimeline(nodes);
-    updateConsensus(nodes);
-  }
-
-  // ── Sync badge ──
-
-  function updateSyncBadge(nodes) {
+  function setSync(state) {
     const badge = document.getElementById("sync-badge");
     const label = document.getElementById("sync-label");
-    const okNodes = nodes.filter((n) => n.status === "ok" && (n.validated_ledger || n.closed_ledger || n.ledger_current_index));
-    if (okNodes.length === 0) {
-      badge.className = "sync-badge pending";
-      label.textContent = "Connecting...";
-      return;
-    }
-    const seqs = okNodes.map((n) => {
-      if (n.validated_ledger) return n.validated_ledger.seq;
-      if (n.closed_ledger) return n.closed_ledger.seq;
-      return n.ledger_current_index;
-    });
-    const maxSeq = Math.max(...seqs);
-    const minSeq = Math.min(...seqs);
-    if (maxSeq - minSeq <= 1) {
-      badge.className = "sync-badge synced";
-      label.textContent = "Network Synced";
-    } else {
-      badge.className = "sync-badge desynced";
-      label.textContent = `Desync: ${maxSeq - minSeq} ledgers apart`;
-    }
+    badge.classList.remove("connected", "reconnecting", "offline");
+    badge.classList.add(state);
+    label.textContent = state.toUpperCase();
   }
 
-  // ── Node cards ──
+  // ── Overview ────────────────────────────────────────────────
+  function renderOverview(data, fuzz) {
+    const nodes = data.nodes || [];
+    const ok = nodes.filter((n) => n.status === "ok");
+    const seqs = ok
+      .map((n) => n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index)
+      .filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const minSeq = seqs.length ? Math.min(...seqs) : null;
+    const proposers = ok[0]?.last_close?.proposers ?? "—";
+    const convergeArr = ok.map((n) => n.last_close?.converge_time_s).filter((v) => v != null);
+    const converge = convergeArr.length
+      ? `${(convergeArr.reduce((a, b) => a + b, 0) / convergeArr.length).toFixed(1)}s`
+      : "—";
 
-  function updateNodeCards(nodes) {
+    const kpis = [
+      { lbl: "Nodes online", num: `${ok.length} / ${nodes.length}` },
+      { lbl: "Latest ledger", num: maxSeq ? maxSeq.toLocaleString("en-US") : "—" },
+      { lbl: "Proposers", num: proposers },
+      { lbl: "Converge time", num: converge },
+    ];
+    document.getElementById("overview-kpis").innerHTML = kpis
+      .map((k) => `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num">${k.num}</div></div>`)
+      .join("");
+
+    const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
+    const divergences = fuzz?.divergences_total ?? 0;
+    const crashes = fuzz?.crashes_total ?? 0;
+    const rows = [
+      { item: "Ledger spread", status: spread <= 1 ? "synced" : `${spread} ledgers apart`, count: spread },
+      { item: "Unreachable nodes", status: nodes.length - ok.length === 0 ? "none" : "needs attention", count: nodes.length - ok.length },
+      { item: "Fuzzer divergences", status: divergences === 0 ? "clean" : "investigating", count: divergences },
+      { item: "Fuzzer crashes", status: crashes === 0 ? "clean" : "open", count: crashes },
+    ];
+    document.querySelector("#overview-summary tbody").innerHTML = rows
+      .map((r) => `<tr><td>${r.item}</td><td>${r.status}</td><td>${r.count}</td></tr>`)
+      .join("");
+  }
+  renderers.push(renderOverview);
+
+  // ── Nodes ───────────────────────────────────────────────────
+  const HEALTHY = new Set(["full", "proposing", "validating"]);
+  function healthClass(n) {
+    if (n.status !== "ok") return "health-err";
+    return HEALTHY.has(n.server_state) ? "health-ok" : "health-warn";
+  }
+
+  function renderNodes(data) {
     const grid = document.getElementById("node-grid");
-    grid.innerHTML = "";
-    for (const node of nodes) {
-      grid.appendChild(createNodeCard(node));
+    grid.innerHTML = (data.nodes || []).map((n) => {
+      const seq = n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index ?? "—";
+      const peers = n.status === "ok" ? n.peers ?? "—" : "—";
+      const lag = n.validated_ledger?.age != null ? `${n.validated_ledger.age}s` : "—";
+      const id = n.status === "ok" ? (n.build_version || "—") : (n.error || "offline");
+      return `
+        <article class="node-card ${healthClass(n)}" data-name="${n.name}">
+          <div class="node-name">${n.name}</div>
+          <div class="node-id">${id}</div>
+          <div class="node-mini">
+            <div><div class="l">Ledger</div><div class="v">${typeof seq === "number" ? seq.toLocaleString("en-US") : seq}</div></div>
+            <div><div class="l">Peers</div><div class="v">${peers}</div></div>
+            <div><div class="l">Lag</div><div class="v">${lag}</div></div>
+          </div>
+        </article>`;
+    }).join("");
+
+    for (const card of grid.querySelectorAll(".node-card")) {
+      card.addEventListener("click", () => openDrawer(card.dataset.name));
     }
   }
+  renderers.push(renderNodes);
 
-  function createNodeCard(node) {
-    const card = document.createElement("div");
-    card.className = `node-card ${node.type}`;
-    if (selectedNode === node.name) card.classList.add("selected");
-    card.dataset.name = node.name;
-    card.style.cursor = "pointer";
-    card.addEventListener("click", () => selectNode(node.name));
-
-    const healthyStates = ["full", "proposing", "validating"];
-    const statusClass =
-      node.status === "ok"
-        ? healthyStates.includes(node.server_state)
-          ? "ok"
-          : "warn"
-        : "err";
-    const stateText =
-      node.status === "ok"
-        ? node.server_state
-        : node.status === "unreachable"
-          ? "unreachable"
-          : node.error || "error";
-
-    const validatedSeq = node.validated_ledger ? node.validated_ledger.seq : null;
-    const currentSeq = node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null);
-    const ledgerSeq = validatedSeq || currentSeq || "-";
-    const ledgerAge = node.validated_ledger ? `${node.validated_ledger.age}s ago` : "-";
-    const peers = node.status === "ok" ? node.peers : "-";
-    const uptime = node.status === "ok" ? formatUptime(node.uptime) : "-";
-    const version = node.status === "ok" ? (node.build_version || "-") : "-";
-
-    card.innerHTML = `
-      <div class="node-card-header">
-        <div class="node-name-group">
-          ${logoFor(node.type)}
-          <span class="node-name">${node.name}</span>
-        </div>
-        <span class="node-type-badge ${node.type}">${node.type}</span>
-      </div>
-      <div class="node-status">
-        <span class="status-dot ${statusClass}"></span>
-        <span>${stateText}</span>
-        <span style="margin-left:auto;color:var(--text-dim);font-size:11px">${version}</span>
-      </div>
-      <div class="node-stats">
-        <div class="stat">
-          <span class="stat-label">Ledger</span>
-          <span class="stat-value ledger-seq">${ledgerSeq}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Age</span>
-          <span class="stat-value">${ledgerAge}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Peers</span>
-          <span class="stat-value">${peers}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Uptime</span>
-          <span class="stat-value">${uptime}</span>
-        </div>
-      </div>
-    `;
-    return card;
-  }
-
-  function formatUptime(seconds) {
-    if (!seconds && seconds !== 0) return "-";
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
-  }
-
-  // ── Topology ──
-
-  function updateTopology(nodes) {
+  // ── Topology ────────────────────────────────────────────────
+  function renderTopology(data) {
     const svg = document.getElementById("topology-svg");
-    if (!svg || nodes.length === 0) return;
-
-    const W = 700, H = 340;
-    const cx = W / 2, cy = H / 2;
-    const R = Math.min(W, H) / 2 - 50;
-    const n = nodes.length;
-
-    const positions = nodes.map((_, i) => {
-      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      return { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
+    const nodes = data.nodes || [];
+    if (!nodes.length) { svg.innerHTML = ""; return; }
+    const W = 700, H = 520, cx = W / 2, cy = H / 2 - 20, R = Math.min(W, H) / 2 - 80;
+    const pos = nodes.map((_, i) => {
+      const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+      return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
     });
 
     let html = "";
-
-    // Links
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const active =
-          nodes[i].status === "ok" && nodes[j].status === "ok" ? " active" : "";
-        html += `<line class="topo-link${active}" x1="${positions[i].x}" y1="${positions[i].y}" x2="${positions[j].x}" y2="${positions[j].y}"/>`;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const cls = nodes[i].status === "ok" && nodes[j].status === "ok" ? "active" : "";
+        html += `<line class="topo-link ${cls}" x1="${pos[i].x}" y1="${pos[i].y}" x2="${pos[j].x}" y2="${pos[j].y}"/>`;
       }
     }
-
-    // Nodes (clickable)
-    for (let i = 0; i < n; i++) {
-      const node = nodes[i];
-      const p = positions[i];
-      const cls = node.status !== "ok" ? "unreachable" : node.type;
-      const isSelected = selectedNode === node.name;
-      const seqVal = node.validated_ledger ? node.validated_ledger.seq : (node.ledger_current_index || (node.closed_ledger ? node.closed_ledger.seq : null));
-      const seq = seqVal ? `#${seqVal}` : "";
-      const shortName = node.name.replace("rippled-", "R").replace("goxrpl-", "G");
-      html += `<g class="topo-node clickable" data-name="${node.name}">`;
-      html += `<circle class="topo-node-circle ${cls}${isSelected ? " selected" : ""}" cx="${p.x}" cy="${p.y}" r="24"/>`;
-      if (node.status === "ok") {
-        html += topoLogoFor(node.type, p.x, p.y);
-      } else {
-        html += `<text class="topo-node-label" x="${p.x}" y="${p.y}">${shortName}</text>`;
-      }
-      html += `<text class="topo-node-name" x="${p.x}" y="${p.y + 34}">${node.name}</text>`;
-      html += `<text class="topo-node-seq" x="${p.x}" y="${p.y + 46}">${seq}</text>`;
-      html += `</g>`;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i], p = pos[i];
+      const cls = n.status !== "ok" ? "unreachable" : (HEALTHY.has(n.server_state) ? "" : "warn");
+      html += `<g class="topo-node" data-name="${n.name}">
+        <circle class="topo-node-circle ${cls}" cx="${p.x}" cy="${p.y}" r="14"/>
+        <text class="topo-node-label" x="${p.x}" y="${p.y + 22}">${n.name}</text>
+      </g>`;
     }
-
     svg.innerHTML = html;
 
-    // Attach click handlers to topology nodes
-    svg.querySelectorAll(".topo-node.clickable").forEach((g) => {
-      g.addEventListener("click", () => {
-        const name = g.dataset.name;
-        if (name) selectNode(name);
-      });
-    });
+    for (const g of svg.querySelectorAll(".topo-node")) {
+      g.addEventListener("click", () => openDrawer(g.dataset.name));
+    }
+  }
+  renderers.push(renderTopology);
+
+  // ── Timeline ────────────────────────────────────────────────
+  const MAX_TIMELINE = 80;
+  const prevValidatedSeqs = {};
+  const prevClosedSeqs = {};
+  const closeRows = new Map(); // seq → { time, hash, byNode: Map<name, "match"|"diverged"> }
+  let pendingNew = 0;
+  let timelinePinned = false;
+
+  function pushTimelineEvents(nodes) {
+    const now = new Date();
+    for (const n of nodes) {
+      if (n.status !== "ok") continue;
+      const v = n.validated_ledger?.seq;
+      if (v != null && prevValidatedSeqs[n.name] !== v) {
+        prevValidatedSeqs[n.name] = v;
+        const row = closeRows.get(v) || { time: now, hash: n.validated_ledger.hash || "", byNode: new Map() };
+        const hashSeen = row.hash || n.validated_ledger.hash || "";
+        const diverged = hashSeen && n.validated_ledger.hash && hashSeen !== n.validated_ledger.hash;
+        row.byNode.set(n.name, diverged ? "diverged" : "match");
+        row.hash = hashSeen;
+        if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
+      }
+      const c = n.closed_ledger?.seq;
+      if (!v && c != null && prevClosedSeqs[n.name] !== c) {
+        prevClosedSeqs[n.name] = c;
+        const row = closeRows.get(c) || { time: now, hash: "", byNode: new Map() };
+        row.byNode.set(n.name, "match");
+        if (!closeRows.has(c)) { closeRows.set(c, row); pendingNew += 1; }
+      }
+    }
+    if (closeRows.size > MAX_TIMELINE) {
+      const seqs = [...closeRows.keys()].sort((a, b) => a - b);
+      while (seqs.length && closeRows.size > MAX_TIMELINE) {
+        closeRows.delete(seqs.shift());
+      }
+    }
   }
 
-  // ── Timeline ──
+  function renderTimeline(data) {
+    pushTimelineEvents(data.nodes || []);
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    const seqs = [...closeRows.keys()].sort((a, b) => a - b);
 
-  function updateTimeline(nodes) {
-    const container = document.getElementById("timeline-list");
-    if (!container) return;
-
-    const now = new Date();
-    for (const node of nodes) {
-      if (node.status !== "ok") continue;
-
-      // Validated seq advances become "Validated ledger #N" entries.
-      if (node.validated_ledger && node.validated_ledger.seq) {
-        const vseq = node.validated_ledger.seq;
-        const prev = prevValidatedSeqs[node.name];
-        if (prev !== vseq) {
-          prevValidatedSeqs[node.name] = vseq;
-          if (prev !== undefined) {
-            timelineEntries.unshift({
-              time: now,
-              name: node.name,
-              type: node.type,
-              seq: vseq,
-              hash: node.validated_ledger.hash || "",
-              kind: "validated",
-            });
-          }
-        }
-      }
-
-      // Closed seq advances — only log while we don't have a validated
-      // ledger yet, so the pre-quorum ramp-up is visible without
-      // conflating with the real "validated" events. Once the node has
-      // a validated_ledger, subsequent closed advances are redundant.
-      if (!node.validated_ledger && node.closed_ledger && node.closed_ledger.seq) {
-        const cseq = node.closed_ledger.seq;
-        const prev = prevClosedSeqs[node.name];
-        if (prev !== cseq) {
-          prevClosedSeqs[node.name] = cseq;
-          if (prev !== undefined) {
-            timelineEntries.unshift({
-              time: now,
-              name: node.name,
-              type: node.type,
-              seq: cseq,
-              hash: "",
-              kind: "closed",
-            });
-          }
-        }
-      }
-    }
-
-    if (timelineEntries.length > MAX_TIMELINE) {
-      timelineEntries = timelineEntries.slice(0, MAX_TIMELINE);
-    }
-
-    if (timelineEntries.length === 0) {
-      container.innerHTML =
-        '<div class="timeline-empty">Waiting for ledger closes...</div>';
+    if (!seqs.length) {
+      list.innerHTML = `<div class="timeline-empty">Waiting for ledger closes…</div>`;
+      chip.hidden = true;
       return;
     }
-
-    container.innerHTML = timelineEntries
-      .map((e) => {
-        const verb = e.kind === "closed" ? "Closed" : "Validated";
-        return `
-      <div class="timeline-entry">
-        <span class="timeline-time">${formatTime(e.time)}</span>
-        <span class="timeline-node ${e.type}">${e.name}</span>
-        <span class="timeline-event">
-          ${verb} ledger <span class="seq">#${e.seq}</span>
-          <span class="hash">${e.hash ? e.hash.slice(0, 12) + "..." : ""}</span>
-        </span>
+    const nodeNames = (data.nodes || []).map((n) => n.name);
+    const html = seqs.map((seq) => {
+      const row = closeRows.get(seq);
+      const time = row.time.toLocaleTimeString("en-US", { hour12: false });
+      const hash = row.hash ? row.hash.slice(0, 12) + "…" : "";
+      const dots = nodeNames.map((name) => {
+        const status = row.byNode.get(name);
+        if (!status) return `<span style="background:var(--rule)"></span>`;
+        return `<span class="${status === "diverged" ? "diverged" : ""}"></span>`;
+      }).join("");
+      return `<div class="timeline-row" data-seq="${seq}">
+        <div class="timeline-seq">${seq.toLocaleString("en-US")}</div>
+        <div class="timeline-rule"></div>
+        <div class="timeline-meta">
+          <span>${time}</span>
+          <span class="timeline-hash">${hash}</span>
+          <span class="timeline-dots">${dots}</span>
+        </div>
       </div>`;
-      })
-      .join("");
-  }
+    }).join("");
+    const prevScroll = list.scrollTop;
+    list.innerHTML = html;
 
-  function formatTime(d) {
-    return d.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }
-
-  // ── Consensus metrics ──
-
-  function updateConsensus(nodes) {
-    const okNodes = nodes.filter((n) => n.status === "ok");
-    const nodesWithLedger = okNodes.filter((n) => n.validated_ledger || n.closed_ledger || n.ledger_current_index);
-    const totalNodes = nodes.length;
-    const onlineNodes = okNodes.length;
-
-    document.getElementById("metric-online").textContent = `${onlineNodes}/${totalNodes}`;
-    document.getElementById("metric-validators").textContent =
-      okNodes.length > 0 && okNodes[0].last_close
-        ? okNodes[0].last_close.proposers || "-"
-        : "-";
-
-    const seqs = nodesWithLedger.map((n) => {
-      if (n.validated_ledger) return n.validated_ledger.seq;
-      if (n.closed_ledger) return n.closed_ledger.seq;
-      return n.ledger_current_index;
-    });
-    document.getElementById("metric-ledger").textContent =
-      seqs.length > 0 ? Math.max(...seqs) : "-";
-
-    const convergeTimes = okNodes
-      .filter((n) => n.last_close && n.last_close.converge_time_s !== undefined)
-      .map((n) => n.last_close.converge_time_s);
-    document.getElementById("metric-converge").textContent =
-      convergeTimes.length > 0
-        ? `${(convergeTimes.reduce((a, b) => a + b, 0) / convergeTimes.length).toFixed(1)}s`
-        : "-";
-  }
-
-  // ── Fuzzer panel ──
-
-  async function pollFuzz() {
-    try {
-      const r = await fetch("/api/fuzz");
-      if (r.status === 204) return;
-      if (!r.ok) return;
-      const data = await r.json();
-      document.getElementById("fuzz-submitted").textContent = data.txs_submitted_total ?? "—";
-      document.getElementById("fuzz-applied").textContent = data.txs_applied_total ?? "—";
-      document.getElementById("fuzz-divergences").textContent = data.divergences_total ?? "—";
-      document.getElementById("fuzz-crashes").textContent = data.crashes_total ?? "—";
-      document.getElementById("fuzz-seed").textContent = data.current_seed ?? "—";
-      const tbody = document.querySelector("#fuzz-by-layer tbody");
-      tbody.innerHTML = "";
-      const layerEntries = Object.entries(data.divergences_total_by_layer ?? {})
-        .sort(([a], [b]) => a.localeCompare(b));
-      for (const [layer, count] of layerEntries) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${layer}</td><td>${count}</td>`;
-        tbody.appendChild(tr);
-      }
-    } catch (_) {
-      // panel stays at "—" until the sidecar comes up.
+    if (timelinePinned && pendingNew > 0) {
+      list.scrollTop = prevScroll;
+      document.getElementById("timeline-new-count").textContent = pendingNew;
+      chip.hidden = false;
+    } else {
+      list.scrollTop = list.scrollHeight;
+      pendingNew = 0;
+      chip.hidden = true;
     }
   }
+  renderers.push(renderTimeline);
 
-  // ── Init ──
+  function wireTimelineScroll() {
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    list.addEventListener("scroll", () => {
+      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
+      timelinePinned = !atBottom;
+      if (atBottom) { chip.hidden = true; pendingNew = 0; }
+    });
+    chip.addEventListener("click", () => {
+      list.scrollTop = list.scrollHeight;
+      chip.hidden = true;
+      pendingNew = 0;
+    });
+  }
 
+  // ── Fuzzer ──────────────────────────────────────────────────
+  function renderFuzzer(_data, fuzz) {
+    const seedEl = document.getElementById("fuzz-seed-inline");
+    if (!fuzz) {
+      seedEl.textContent = "—";
+      document.getElementById("fuzz-kpis").innerHTML = "";
+      document.querySelector("#fuzz-by-layer tbody").innerHTML = "";
+      return;
+    }
+    seedEl.textContent = `#${fuzz.current_seed ?? "—"}`;
+    const kpis = [
+      { lbl: "Submitted", num: fuzz.txs_submitted_total ?? "—" },
+      { lbl: "Applied", num: fuzz.txs_applied_total ?? "—" },
+      { lbl: "Divergences", num: fuzz.divergences_total ?? "—" },
+      { lbl: "Crashes", num: fuzz.crashes_total ?? "—" },
+      { lbl: "Seed", num: fuzz.current_seed ?? "—", mono: true },
+    ];
+    document.getElementById("fuzz-kpis").innerHTML = kpis.map((k) =>
+      `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num ${k.mono ? "mono" : ""}">${k.num}</div></div>`
+    ).join("");
+
+    // The fuzz API exposes only a total crash count (no per-layer breakdown),
+    // so when any crash exists we mark every divergent row — "the fuzzer is
+    // in a crashed state, every layer is suspect" — rather than guess which.
+    const layerEntries = Object.entries(fuzz.divergences_total_by_layer ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const anyCrash = (fuzz.crashes_total ?? 0) > 0;
+    document.querySelector("#fuzz-by-layer tbody").innerHTML = layerEntries.map(([layer, count]) =>
+      `<tr class="${anyCrash ? "crashed" : ""}"><td>${layer}</td><td>${count}</td></tr>`
+    ).join("");
+  }
+  renderers.push(renderFuzzer);
+
+  // Update footer context to reflect active tab
+  function updateFooterContext() {
+    const tab = currentTab();
+    const seqs = (latest.nodes || []).map((n) => n.validated_ledger?.seq).filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const ctx = document.getElementById("footer-ctx");
+    if (tab === "fuzzer" && latestFuzz) ctx.innerHTML = `· seed <span class="mono">#${latestFuzz.current_seed}</span>`;
+    else if (maxSeq) ctx.innerHTML = `· ledger <span class="mono">${maxSeq.toLocaleString("en-US")}</span>`;
+    else ctx.textContent = "";
+  }
+
+  // ── Drawer ──────────────────────────────────────────────────
+  let drawerName = null;
+  let drawerPoll = null;
+
+  async function fetchLogs(name) {
+    return MOCK
+      ? fetchJSON("/fixtures/mock-logs.json")
+      : fetchJSON(`/api/logs/${encodeURIComponent(name)}`);
+  }
+
+  function renderDrawer(data) {
+    const stateEl = document.getElementById("drawer-state");
+    const logsEl = document.getElementById("drawer-logs");
+
+    if (data?.state) {
+      const s = data.state;
+      const seq = s.validated_ledger
+        ? `validated #${s.validated_ledger.seq}`
+        : s.closed_ledger ? `closed #${s.closed_ledger.seq}` : "—";
+      stateEl.innerHTML =
+        `<b>${s.server_state || s.status || "—"}</b> · ${seq} · peers ${s.peers ?? "—"} · ${s.build_version || ""}`;
+    } else {
+      stateEl.textContent = "No state available.";
+    }
+
+    const entries = (data?.logs || []).slice().reverse();
+    if (!entries.length) {
+      logsEl.innerHTML = `<div class="row" style="color:var(--mid)">No log entries yet.</div>`;
+      return;
+    }
+    logsEl.innerHTML = entries.map((e) => {
+      const t = (e.ts.split("T")[1] || e.ts).split(".")[0];
+      const klass = e.level === "error" || e.level === "unreachable" ? "lvl-err"
+        : (e.level === "proposing" || e.level === "validating") ? "lvl-ok" : "";
+      return `<div class="row"><span class="ts">${t}</span><span class="${klass}">${e.level}</span><span>${e.message}</span></div>`;
+    }).join("");
+  }
+
+  async function openDrawer(name) {
+    drawerName = name;
+    document.getElementById("drawer").classList.add("open");
+    document.getElementById("drawer-title").textContent = `${name} · logs`;
+    for (const card of document.querySelectorAll(".node-card")) {
+      card.classList.toggle("selected", card.dataset.name === name);
+    }
+    for (const c of document.querySelectorAll(".topo-node-circle")) {
+      c.classList.remove("selected");
+    }
+    const g = document.querySelector(`.topo-node[data-name="${CSS.escape(name)}"] .topo-node-circle`);
+    if (g) g.classList.add("selected");
+
+    const refresh = async () => {
+      try { renderDrawer(await fetchLogs(name)); } catch { renderDrawer(null); }
+    };
+    await refresh();
+    if (drawerPoll) clearInterval(drawerPoll);
+    drawerPoll = setInterval(refresh, 2000);
+  }
+
+  function closeDrawer() {
+    drawerName = null;
+    const drawer = document.getElementById("drawer");
+    drawer.classList.remove("open");
+    drawer.style.height = "";
+    if (drawerPoll) { clearInterval(drawerPoll); drawerPoll = null; }
+    for (const card of document.querySelectorAll(".node-card")) card.classList.remove("selected");
+    for (const c of document.querySelectorAll(".topo-node-circle")) c.classList.remove("selected");
+  }
+
+  function wireDrawerResize() {
+    const drawer = document.getElementById("drawer");
+    const handle = document.getElementById("drawer-resize");
+    let startY = 0, startH = 0, dragging = false;
+    handle.addEventListener("pointerdown", (e) => {
+      dragging = true;
+      startY = e.clientY;
+      startH = drawer.getBoundingClientRect().height;
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const newH = Math.max(120, Math.min(window.innerHeight * 0.7, startH + (startY - e.clientY)));
+      drawer.style.height = `${newH}px`;
+    });
+    handle.addEventListener("pointerup", () => { dragging = false; });
+  }
+
+  // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
+    for (const el of document.querySelectorAll(".tab")) {
+      el.addEventListener("click", () => setTab(el.dataset.tab));
+    }
+    window.addEventListener("hashchange", () => setTab(currentTab()));
+    setTab(currentTab());
+
+    document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+    wireDrawerResize();
+    wireTimelineScroll();
+
     connectSSE();
-    setInterval(poll, 5000);
+    pollOnce();
+    setInterval(pollOnce, 5000);
 
-    // Close button for log panel
-    document.getElementById("log-panel-close").addEventListener("click", deselectNode);
-
-    setInterval(pollFuzz, 5000);
-    pollFuzz();
+    setInterval(() => {
+      if (!lastUpdate) return;
+      const age = Math.max(0, Math.round((Date.now() - lastUpdate) / 1000));
+      document.getElementById("footer-age").textContent = `${age}s ago`;
+    }, 1000);
   });
 })();
