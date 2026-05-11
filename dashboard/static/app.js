@@ -84,6 +84,46 @@
     label.textContent = state.toUpperCase();
   }
 
+  // ── Overview ────────────────────────────────────────────────
+  function renderOverview(data, fuzz) {
+    const nodes = data.nodes || [];
+    const ok = nodes.filter((n) => n.status === "ok");
+    const seqs = ok
+      .map((n) => n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index)
+      .filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const minSeq = seqs.length ? Math.min(...seqs) : null;
+    const proposers = ok[0]?.last_close?.proposers ?? "—";
+    const convergeArr = ok.map((n) => n.last_close?.converge_time_s).filter((v) => v != null);
+    const converge = convergeArr.length
+      ? `${(convergeArr.reduce((a, b) => a + b, 0) / convergeArr.length).toFixed(1)}s`
+      : "—";
+
+    const kpis = [
+      { lbl: "Nodes online", num: `${ok.length} / ${nodes.length}` },
+      { lbl: "Latest ledger", num: maxSeq ? maxSeq.toLocaleString("en-US") : "—" },
+      { lbl: "Proposers", num: proposers },
+      { lbl: "Converge time", num: converge },
+    ];
+    document.getElementById("overview-kpis").innerHTML = kpis
+      .map((k) => `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num">${k.num}</div></div>`)
+      .join("");
+
+    const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
+    const divergences = fuzz?.divergences_total ?? 0;
+    const crashes = fuzz?.crashes_total ?? 0;
+    const rows = [
+      { item: "Ledger spread", status: spread <= 1 ? "synced" : `${spread} ledgers apart`, count: spread },
+      { item: "Unreachable nodes", status: nodes.length - ok.length === 0 ? "none" : "needs attention", count: nodes.length - ok.length },
+      { item: "Fuzzer divergences", status: divergences === 0 ? "clean" : "investigating", count: divergences },
+      { item: "Fuzzer crashes", status: crashes === 0 ? "clean" : "open", count: crashes },
+    ];
+    document.querySelector("#overview-summary tbody").innerHTML = rows
+      .map((r) => `<tr><td>${r.item}</td><td>${r.status}</td><td>${r.count}</td></tr>`)
+      .join("");
+  }
+  renderers.push(renderOverview);
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     for (const el of document.querySelectorAll(".tab")) {
