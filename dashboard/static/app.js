@@ -574,6 +574,154 @@
     renderInspectorLogs(s, data);
   });
 
+  // ── Keyboard ────────────────────────────────────────────────
+  function isTypingTarget(t) {
+    return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+  }
+
+  function focusFilterForActivePane() {
+    const pane = store.get().ui.activePane;
+    const id = pane === "rail" ? "rail-filter" : pane === "main" && store.get().ui.view === "timeline" ? "timeline-filter" : pane === "inspector" ? "log-filter" : null;
+    if (id) document.getElementById(id).focus();
+  }
+
+  let railFocusIdx = -1;
+  let timelineFocusIdx = -1;
+  let logFocusIdx = -1;
+
+  function refreshKbFocus() {
+    document.querySelectorAll(".node-row.kb-focus, .timeline-row.kb-focus, .inspector-logs .row.kb-focus").forEach((el) => el.classList.remove("kb-focus"));
+    if (store.get().ui.activePane === "rail" && railFocusIdx >= 0) {
+      const rows = document.querySelectorAll(".node-row");
+      rows[railFocusIdx]?.classList.add("kb-focus");
+      rows[railFocusIdx]?.scrollIntoView({ block: "nearest" });
+    }
+    if (store.get().ui.activePane === "main" && store.get().ui.view === "timeline" && timelineFocusIdx >= 0) {
+      const rows = document.querySelectorAll(".timeline-row");
+      rows[timelineFocusIdx]?.classList.add("kb-focus");
+      rows[timelineFocusIdx]?.scrollIntoView({ block: "nearest" });
+    }
+    if (store.get().ui.activePane === "inspector" && logFocusIdx >= 0) {
+      const rows = document.querySelectorAll(".inspector-logs .row");
+      rows[logFocusIdx]?.classList.add("kb-focus");
+      rows[logFocusIdx]?.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function walkList(delta) {
+    const pane = store.get().ui.activePane;
+    if (pane === "rail") {
+      const rows = document.querySelectorAll(".node-row");
+      if (!rows.length) return;
+      railFocusIdx = Math.max(0, Math.min(rows.length - 1, (railFocusIdx < 0 ? 0 : railFocusIdx + delta)));
+    } else if (pane === "main" && store.get().ui.view === "timeline") {
+      const rows = document.querySelectorAll(".timeline-row");
+      if (!rows.length) return;
+      timelineFocusIdx = Math.max(0, Math.min(rows.length - 1, (timelineFocusIdx < 0 ? 0 : timelineFocusIdx + delta)));
+    } else if (pane === "inspector") {
+      const rows = document.querySelectorAll(".inspector-logs .row");
+      if (!rows.length) return;
+      logFocusIdx = Math.max(0, Math.min(rows.length - 1, (logFocusIdx < 0 ? 0 : logFocusIdx + delta)));
+    }
+    refreshKbFocus();
+  }
+
+  function activateFocused() {
+    const pane = store.get().ui.activePane;
+    if (pane === "rail") {
+      const rows = document.querySelectorAll(".node-row");
+      const r = rows[railFocusIdx];
+      if (r) setSelected(r.dataset.name);
+    } else if (pane === "inspector") {
+      const cb = document.getElementById("log-follow");
+      cb.checked = !cb.checked;
+      store.setFilter({ followTail: cb.checked });
+    }
+  }
+
+  function jumpNextDivergence() {
+    if (store.get().ui.view !== "timeline") return;
+    const rows = [...document.querySelectorAll(".timeline-row.diverged")];
+    if (!rows.length) return;
+    const current = rows.findIndex((r) => r.classList.contains("kb-focus"));
+    const next = rows[(current + 1) % rows.length];
+    next.scrollIntoView({ block: "center" });
+    rows.forEach((r) => r.classList.remove("kb-focus"));
+    next.classList.add("kb-focus");
+  }
+
+  function copyFocused() {
+    const pane = store.get().ui.activePane;
+    let text = null;
+    if (pane === "inspector") {
+      const focused = document.querySelector(".inspector-logs .row.kb-focus");
+      text = focused ? focused.innerText : document.getElementById("inspector-state").innerText;
+    } else if (pane === "main" && store.get().ui.view === "timeline") {
+      const focused = document.querySelector(".timeline-row.kb-focus");
+      if (focused) text = focused.innerText;
+    }
+    if (text) navigator.clipboard?.writeText(text).catch(() => {});
+  }
+
+  function cyclePane(delta) {
+    const order = PANES;
+    const i = order.indexOf(store.get().ui.activePane);
+    setActivePane(order[(i + delta + order.length) % order.length]);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    // Cheatsheet / palette open while typing: esc should still close
+    if (e.key === "Escape") {
+      const palette = document.getElementById("palette");
+      if (!palette.hidden) { palette.hidden = true; return; }
+      const cheats = document.getElementById("cheatsheet");
+      if (!cheats.hidden) { cheats.hidden = true; return; }
+      if (isTypingTarget(e.target)) {
+        e.target.blur();
+        // Clear that input's value via store
+        if (e.target.id === "rail-filter") { store.setFilter({ nodes: "" }); e.target.value = ""; }
+        if (e.target.id === "timeline-filter") { store.setFilter({ timeline: "" }); e.target.value = ""; pushHash(); }
+        if (e.target.id === "log-filter") { store.setFilter({ logs: "" }); e.target.value = ""; }
+        return;
+      }
+      if (store.get().ui.selected) { setSelected(null); return; }
+      return;
+    }
+    if (isTypingTarget(e.target)) return;
+    if (e.metaKey && e.key.toLowerCase() === "k") { e.preventDefault(); document.getElementById("palette").hidden = false; document.getElementById("palette-input").focus(); return; }
+    if (e.ctrlKey && e.key.toLowerCase() === "k") { e.preventDefault(); document.getElementById("palette").hidden = false; document.getElementById("palette-input").focus(); return; }
+
+    switch (e.key) {
+      case "1": setView("timeline"); break;
+      case "2": setView("topology"); break;
+      case "3": setView("fuzzer"); break;
+      case "j": case "J": walkList(+1); break;
+      case "k": case "K": walkList(-1); break;
+      case "Enter": activateFocused(); break;
+      case "/": e.preventDefault(); focusFilterForActivePane(); break;
+      case " ": e.preventDefault(); setPaused(!store.get().ui.paused); break;
+      case "n": case "N": jumpNextDivergence(); break;
+      case "c": case "C": copyFocused(); break;
+      case "?": document.getElementById("cheatsheet").hidden = false; break;
+      case "Tab":
+        e.preventDefault();
+        cyclePane(e.shiftKey ? -1 : +1);
+        break;
+    }
+  });
+
+  // Cheatsheet dismiss (click outside the card)
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("cheatsheet").addEventListener("click", (e) => {
+      if (e.currentTarget === e.target) e.currentTarget.hidden = true;
+    });
+  });
+
+  // Pane focus visual
+  store.subscribe((s) => {
+    document.querySelectorAll("[data-pane]").forEach((el) => el.classList.toggle("pane-focus", el.dataset.pane === s.ui.activePane));
+  });
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
