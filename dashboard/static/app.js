@@ -190,8 +190,90 @@
   }
   renderers.push(renderTopology);
 
-  // Placeholder until Task 8 implements it
-  function openDrawer(name) { console.log("openDrawer", name); }
+  // ── Drawer ──────────────────────────────────────────────────
+  let drawerName = null;
+  let drawerPoll = null;
+
+  async function fetchLogs(name) {
+    return MOCK
+      ? fetchJSON("/fixtures/mock-logs.json")
+      : fetchJSON(`/api/logs/${encodeURIComponent(name)}`);
+  }
+
+  function renderDrawer(data) {
+    const stateEl = document.getElementById("drawer-state");
+    const logsEl = document.getElementById("drawer-logs");
+
+    if (data?.state) {
+      const s = data.state;
+      const seq = s.validated_ledger
+        ? `validated #${s.validated_ledger.seq}`
+        : s.closed_ledger ? `closed #${s.closed_ledger.seq}` : "—";
+      stateEl.innerHTML =
+        `<b>${s.server_state || s.status || "—"}</b> · ${seq} · peers ${s.peers ?? "—"} · ${s.build_version || ""}`;
+    } else {
+      stateEl.textContent = "No state available.";
+    }
+
+    const entries = (data?.logs || []).slice().reverse();
+    if (!entries.length) {
+      logsEl.innerHTML = `<div class="row" style="color:var(--mid)">No log entries yet.</div>`;
+      return;
+    }
+    logsEl.innerHTML = entries.map((e) => {
+      const t = (e.ts.split("T")[1] || e.ts).split(".")[0];
+      const klass = e.level === "error" || e.level === "unreachable" ? "lvl-err"
+        : (e.level === "proposing" || e.level === "validating") ? "lvl-ok" : "";
+      return `<div class="row"><span class="ts">${t}</span><span class="${klass}">${e.level}</span><span>${e.message}</span></div>`;
+    }).join("");
+  }
+
+  async function openDrawer(name) {
+    drawerName = name;
+    document.getElementById("drawer").hidden = false;
+    document.getElementById("drawer-title").textContent = `${name} · logs`;
+    for (const card of document.querySelectorAll(".node-card")) {
+      card.classList.toggle("selected", card.dataset.name === name);
+    }
+    for (const c of document.querySelectorAll(".topo-node-circle")) {
+      c.classList.remove("selected");
+    }
+    const g = document.querySelector(`.topo-node[data-name="${CSS.escape(name)}"] .topo-node-circle`);
+    if (g) g.classList.add("selected");
+
+    const refresh = async () => {
+      try { renderDrawer(await fetchLogs(name)); } catch { renderDrawer(null); }
+    };
+    await refresh();
+    if (drawerPoll) clearInterval(drawerPoll);
+    drawerPoll = setInterval(refresh, 2000);
+  }
+
+  function closeDrawer() {
+    drawerName = null;
+    document.getElementById("drawer").hidden = true;
+    if (drawerPoll) { clearInterval(drawerPoll); drawerPoll = null; }
+    for (const card of document.querySelectorAll(".node-card")) card.classList.remove("selected");
+    for (const c of document.querySelectorAll(".topo-node-circle")) c.classList.remove("selected");
+  }
+
+  function wireDrawerResize() {
+    const drawer = document.getElementById("drawer");
+    const handle = document.getElementById("drawer-resize");
+    let startY = 0, startH = 0, dragging = false;
+    handle.addEventListener("pointerdown", (e) => {
+      dragging = true;
+      startY = e.clientY;
+      startH = drawer.getBoundingClientRect().height;
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const newH = Math.max(120, Math.min(window.innerHeight * 0.7, startH + (startY - e.clientY)));
+      drawer.style.height = `${newH}px`;
+    });
+    handle.addEventListener("pointerup", () => { dragging = false; });
+  }
 
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
@@ -200,6 +282,9 @@
     }
     window.addEventListener("hashchange", () => setTab(currentTab()));
     setTab(currentTab());
+
+    document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+    wireDrawerResize();
 
     connectSSE();
     pollOnce();
