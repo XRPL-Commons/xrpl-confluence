@@ -448,6 +448,132 @@
     badge.hidden = crashes === 0;
   });
 
+  // ── Inspector: log polling ──────────────────────────────────
+  let inspectorPoll = null;
+  async function fetchLogs(name) {
+    return MOCK
+      ? fetchJSON("/fixtures/mock-logs.json")
+      : fetchJSON(`/api/logs/${encodeURIComponent(name)}`);
+  }
+
+  async function refreshLogsFor(name) {
+    if (!name) return;
+    try {
+      const data = await fetchLogs(name);
+      store.set({ logs: { ...store.get().logs, [name]: data } });
+    } catch {
+      store.set({ logs: { ...store.get().logs, [name]: null } });
+    }
+  }
+
+  function startInspectorPolling(name) {
+    if (inspectorPoll) clearInterval(inspectorPoll);
+    refreshLogsFor(name);
+    inspectorPoll = setInterval(() => refreshLogsFor(name), 2000);
+  }
+
+  function stopInspectorPolling() {
+    if (inspectorPoll) { clearInterval(inspectorPoll); inspectorPoll = null; }
+  }
+
+  // ── Inspector: empty-state (fleet summary) ──────────────────
+  function renderFleetSummary(s) {
+    const nodes = s.nodes || [];
+    const ok = nodes.filter((n) => n.status === "ok");
+    const seqs = ok.map((n) => n.validated_ledger?.seq ?? n.closed_ledger?.seq ?? n.ledger_current_index).filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const minSeq = seqs.length ? Math.min(...seqs) : null;
+    const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
+    const divergences = s.fuzz?.divergences_total ?? 0;
+    const crashes = s.fuzz?.crashes_total ?? 0;
+    const rows = [
+      { item: "Ledger spread", status: spread <= 1 ? "synced" : `${spread} ledgers apart`, count: spread },
+      { item: "Unreachable nodes", status: nodes.length - ok.length === 0 ? "none" : "needs attention", count: nodes.length - ok.length },
+      { item: "Fuzzer divergences", status: divergences === 0 ? "clean" : "investigating", count: divergences },
+      { item: "Fuzzer crashes", status: crashes === 0 ? "clean" : "open", count: crashes },
+    ];
+    document.querySelector("#overview-summary tbody").innerHTML = rows
+      .map((r) => `<tr><td>${r.item}</td><td>${r.status}</td><td>${r.count}</td></tr>`).join("");
+  }
+
+  // ── Inspector: state line + logs ────────────────────────────
+  function levelOf(e) {
+    if (e.level === "error" || e.level === "unreachable") return "err";
+    if (e.level === "proposing" || e.level === "validating") return "ok";
+    return "warn";
+  }
+
+  function renderInspectorState(s, data) {
+    const stateEl = document.getElementById("inspector-state");
+    if (data?.state) {
+      const ss = data.state;
+      const seq = ss.validated_ledger ? `validated #${ss.validated_ledger.seq}`
+                : ss.closed_ledger ? `closed #${ss.closed_ledger.seq}` : "—";
+      stateEl.innerHTML = `<b>${ss.server_state || ss.status || "—"}</b> · ${seq} · peers ${ss.peers ?? "—"} · ${ss.build_version || ""}`;
+    } else if (data === null) {
+      stateEl.textContent = "Failed to fetch state.";
+    } else {
+      stateEl.textContent = "Loading…";
+    }
+  }
+
+  function renderInspectorLogs(s, data) {
+    const logsEl = document.getElementById("inspector-logs");
+    const f = s.ui.filters;
+    let entries = (data?.logs || []).slice().reverse();
+    entries = entries.filter((e) => f.logLevels[levelOf(e)]);
+    const q = f.logs.trim().toLowerCase();
+    if (q) entries = entries.filter((e) => (e.message || "").toLowerCase().includes(q) || (e.level || "").toLowerCase().includes(q));
+    if (!entries.length) {
+      logsEl.innerHTML = `<div class="row" style="color:var(--mid)">No log entries.</div>`;
+    } else {
+      logsEl.innerHTML = entries.map((e) => {
+        const t = (e.ts.split("T")[1] || e.ts).split(".")[0];
+        const klass = `lvl-${levelOf(e)}`;
+        return `<div class="row"><span class="ts">${t}</span><span class="${klass}">${e.level}</span><span>${e.message}</span></div>`;
+      }).join("");
+    }
+    if (f.followTail) logsEl.scrollTop = logsEl.scrollHeight;
+  }
+
+  // ── Inspector subscriber ────────────────────────────────────
+  let prevSelected = null;
+  store.subscribe((s) => {
+    const title = document.getElementById("inspector-title");
+    const clear = document.getElementById("inspector-clear");
+    const empty = document.getElementById("inspector-empty");
+    const stateEl = document.getElementById("inspector-state");
+    const logsHead = document.getElementById("inspector-logs-head");
+    const logsEl = document.getElementById("inspector-logs");
+    if (!title) return;
+
+    if (s.ui.selected !== prevSelected) {
+      prevSelected = s.ui.selected;
+      if (s.ui.selected) startInspectorPolling(s.ui.selected); else stopInspectorPolling();
+    }
+
+    if (!s.ui.selected) {
+      title.textContent = "Fleet";
+      clear.hidden = true;
+      stateEl.textContent = "";
+      empty.hidden = false;
+      logsHead.hidden = true;
+      logsEl.hidden = true;
+      renderFleetSummary(s);
+      return;
+    }
+
+    title.textContent = s.ui.selected;
+    clear.hidden = false;
+    empty.hidden = true;
+    logsHead.hidden = false;
+    logsEl.hidden = false;
+
+    const data = s.logs[s.ui.selected];
+    renderInspectorState(s, data);
+    renderInspectorLogs(s, data);
+  });
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
@@ -483,6 +609,25 @@
         store.set({}); // trigger re-render
       });
     });
+    // Inspector clear
+    document.getElementById("inspector-clear").addEventListener("click", () => setSelected(null));
+
+    // Log filters
+    document.getElementById("log-filter").addEventListener("input", (e) => {
+      store.setFilter({ logs: e.target.value });
+    });
+    document.getElementById("log-follow").addEventListener("change", (e) => {
+      store.setFilter({ followTail: e.target.checked });
+    });
+    for (const chip of document.querySelectorAll(".log-chip")) {
+      chip.addEventListener("click", () => {
+        const lv = chip.dataset.level;
+        const current = store.get().ui.filters.logLevels;
+        store.setFilter({ logLevels: { ...current, [lv]: !current[lv] } });
+        chip.classList.toggle("active");
+      });
+    }
+
     // Hash routing
     applyHashToStore();
     window.addEventListener("hashchange", applyHashToStore);
