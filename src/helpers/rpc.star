@@ -34,7 +34,7 @@ def server_info_recipe():
         body = '{"method": "server_info", "params": [{}]}',
         extract = {
             "server_state": ".result.info.server_state",
-            "peers": ".result.info.peers",
+            "peers": ".result.info.peers // 0",
         },
     )
 
@@ -67,8 +67,8 @@ def ledger_recipe(ledger_index):
         body = '{{"method": "ledger", "params": [{{"ledger_index": {}}}]}}'.format(index_literal),
         extract = {
             "ledger_hash": ".result.ledger.ledger_hash",
-            "account_hash": ".result.ledger.account_hash",
-            "transaction_hash": ".result.ledger.transaction_hash",
+            "account_hash": ".result.ledger.account_hash // \"\"",
+            "transaction_hash": ".result.ledger.transaction_hash // \"\"",
             "close_time": ".result.ledger.close_time",
             "ledger_index": ".result.ledger.ledger_index",
         },
@@ -175,7 +175,7 @@ def wait_for_peers(plan, node, min_peers, timeout = "60s"):
             endpoint = "/",
             content_type = "application/json",
             body = '{"method": "server_info", "params": [{}]}',
-            extract = {"peers": ".result.info.peers"},
+            extract = {"peers": ".result.info.peers // 0"},
         ),
         field = "extract.peers",
         assertion = ">=",
