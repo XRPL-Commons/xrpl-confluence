@@ -250,6 +250,204 @@
     el.innerHTML = kpis.map((k) => `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num">${k.num}</div></div>`).join("");
   });
 
+  // ── Timeline state ──────────────────────────────────────────
+  const MAX_TIMELINE = 80;
+  const prevValidatedSeqs = {};
+  const prevClosedSeqs = {};
+  const closeRows = new Map(); // seq → { time, hash, byNode: Map }
+  let pendingNew = 0;
+  let timelinePinned = false;
+
+  function pushTimelineEvents(nodes) {
+    const now = new Date();
+    for (const n of nodes) {
+      if (n.status !== "ok") continue;
+      const v = n.validated_ledger?.seq;
+      if (v != null && prevValidatedSeqs[n.name] !== v) {
+        prevValidatedSeqs[n.name] = v;
+        const row = closeRows.get(v) || { time: now, hash: n.validated_ledger.hash || "", byNode: new Map() };
+        const hashSeen = row.hash || n.validated_ledger.hash || "";
+        const diverged = hashSeen && n.validated_ledger.hash && hashSeen !== n.validated_ledger.hash;
+        row.byNode.set(n.name, diverged ? "diverged" : "match");
+        row.hash = hashSeen;
+        if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
+      }
+      const c = n.closed_ledger?.seq;
+      if (!v && c != null && prevClosedSeqs[n.name] !== c) {
+        prevClosedSeqs[n.name] = c;
+        const row = closeRows.get(c) || { time: now, hash: "", byNode: new Map() };
+        row.byNode.set(n.name, "match");
+        if (!closeRows.has(c)) { closeRows.set(c, row); pendingNew += 1; }
+      }
+    }
+    if (closeRows.size > MAX_TIMELINE) {
+      const seqs = [...closeRows.keys()].sort((a, b) => a - b);
+      while (seqs.length && closeRows.size > MAX_TIMELINE) closeRows.delete(seqs.shift());
+    }
+  }
+
+  function rowDiverged(row) {
+    for (const v of row.byNode.values()) if (v === "diverged") return true;
+    return false;
+  }
+
+  function divergenceCount() {
+    let n = 0;
+    for (const r of closeRows.values()) if (rowDiverged(r)) n += 1;
+    return n;
+  }
+
+  // ── Timeline render ─────────────────────────────────────────
+  store.subscribe((s) => {
+    pushTimelineEvents(s.nodes || []);
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    if (!list || !chip) return;
+
+    const q = s.ui.filters.timeline.trim().toLowerCase();
+    const onlyDiv = s.ui.filters.onlyDivergences;
+    const nodeNames = (s.nodes || []).map((n) => n.name);
+    const all = [...closeRows.entries()].sort(([a], [b]) => a - b);
+    const visible = all.filter(([seq, row]) => {
+      if (onlyDiv && !rowDiverged(row)) return false;
+      if (!q) return true;
+      return String(seq).includes(q) || (row.hash || "").toLowerCase().includes(q);
+    });
+
+    if (!visible.length) {
+      list.innerHTML = `<div class="timeline-empty">${all.length ? "No matches." : "Waiting for ledger closes…"}</div>`;
+      chip.hidden = true;
+    } else {
+      list.innerHTML = visible.map(([seq, row]) => {
+        const time = row.time.toLocaleTimeString("en-US", { hour12: false });
+        const hash = row.hash ? row.hash.slice(0, 12) + "…" : "";
+        const dots = nodeNames.map((name) => {
+          const status = row.byNode.get(name);
+          const emph = s.ui.selected === name ? " emphasized" : "";
+          if (!status) return `<span class="${emph}" style="background:var(--rule)" data-name="${name}"></span>`;
+          return `<span class="${status === "diverged" ? "diverged" : ""}${emph}" data-name="${name}"></span>`;
+        }).join("");
+        const divClass = rowDiverged(row) ? "diverged" : "";
+        return `<div class="timeline-row ${divClass}" data-seq="${seq}">
+          <div class="timeline-seq">${seq.toLocaleString("en-US")}</div>
+          <div class="timeline-rule"></div>
+          <div class="timeline-meta">
+            <span>${time}</span>
+            <span class="timeline-hash">${hash}</span>
+            <span class="timeline-dots">${dots}</span>
+          </div>
+        </div>`;
+      }).join("");
+
+      // Wire per-dot click → select that node
+      for (const dot of list.querySelectorAll(".timeline-dots span[data-name]")) {
+        dot.addEventListener("click", (e) => { e.stopPropagation(); setSelected(dot.dataset.name); });
+      }
+
+      if (timelinePinned && pendingNew > 0) {
+        document.getElementById("timeline-new-count").textContent = pendingNew;
+        chip.hidden = false;
+      } else {
+        list.scrollTop = list.scrollHeight;
+        pendingNew = 0;
+        chip.hidden = true;
+      }
+    }
+
+    // Update Timeline segment badge
+    const badge = document.getElementById("seg-timeline-badge");
+    const n = divergenceCount();
+    badge.textContent = n ? `${n} diverged` : "";
+    badge.hidden = n === 0;
+  });
+
+  function wireTimelineScroll() {
+    const list = document.getElementById("timeline-list");
+    const chip = document.getElementById("timeline-new-chip");
+    list.addEventListener("scroll", () => {
+      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
+      timelinePinned = !atBottom;
+      if (atBottom) { chip.hidden = true; pendingNew = 0; }
+    });
+    chip.addEventListener("click", () => {
+      list.scrollTop = list.scrollHeight;
+      chip.hidden = true;
+      pendingNew = 0;
+    });
+  }
+
+  // ── Topology render ─────────────────────────────────────────
+  store.subscribe((s) => {
+    const svg = document.getElementById("topology-svg");
+    if (!svg) return;
+    const nodes = s.nodes || [];
+    if (!nodes.length) { svg.innerHTML = ""; return; }
+    const W = 700, H = 520, cx = W / 2, cy = H / 2 - 20, R = Math.min(W, H) / 2 - 80;
+    const pos = nodes.map((_, i) => {
+      const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+      return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+    });
+    let html = "";
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const cls = nodes[i].status === "ok" && nodes[j].status === "ok" ? "active" : "";
+        html += `<line class="topo-link ${cls}" x1="${pos[i].x}" y1="${pos[i].y}" x2="${pos[j].x}" y2="${pos[j].y}"/>`;
+      }
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i], p = pos[i];
+      const sel = s.ui.selected === n.name ? "selected" : "";
+      const cls = n.status !== "ok" ? "unreachable" : (HEALTHY.has(n.server_state) ? "" : "warn");
+      html += `<g class="topo-node" data-name="${n.name}">
+        <circle class="topo-node-circle ${cls} ${sel}" cx="${p.x}" cy="${p.y}" r="14"/>
+        <text class="topo-node-label" x="${p.x}" y="${p.y + 22}">${n.name}</text>
+      </g>`;
+    }
+    svg.innerHTML = html;
+    for (const g of svg.querySelectorAll(".topo-node")) {
+      g.addEventListener("click", () => setSelected(g.dataset.name));
+    }
+  });
+
+  // ── Fuzzer render ───────────────────────────────────────────
+  let fuzzSortDir = "desc"; // toggles when user clicks the Divergences header
+  store.subscribe((s) => {
+    const seedEl = document.getElementById("fuzz-seed-inline");
+    if (!seedEl) return;
+    const fuzz = s.fuzz;
+    if (!fuzz) {
+      seedEl.textContent = "—";
+      document.getElementById("fuzz-kpis").innerHTML = "";
+      document.querySelector("#fuzz-by-layer tbody").innerHTML = "";
+      const badge = document.getElementById("seg-fuzzer-badge");
+      badge.hidden = true;
+      return;
+    }
+    seedEl.textContent = `#${fuzz.current_seed ?? "—"}`;
+    const kpis = [
+      { lbl: "Submitted",   num: fuzz.txs_submitted_total ?? "—" },
+      { lbl: "Applied",     num: fuzz.txs_applied_total ?? "—" },
+      { lbl: "Divergences", num: fuzz.divergences_total ?? "—" },
+      { lbl: "Crashes",     num: fuzz.crashes_total ?? "—" },
+      { lbl: "Seed",        num: fuzz.current_seed ?? "—", mono: true },
+    ];
+    document.getElementById("fuzz-kpis").innerHTML = kpis.map((k) =>
+      `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num ${k.mono ? "mono" : ""}">${k.num}</div></div>`
+    ).join("");
+
+    const entries = Object.entries(fuzz.divergences_total_by_layer ?? {});
+    entries.sort(([la, ca], [lb, cb]) => fuzzSortDir === "desc" ? cb - ca : ca - cb);
+    const anyCrash = (fuzz.crashes_total ?? 0) > 0;
+    document.querySelector("#fuzz-by-layer tbody").innerHTML = entries.map(([layer, count]) =>
+      `<tr class="${anyCrash ? "crashed" : ""}"><td>${layer}</td><td>${count}</td></tr>`
+    ).join("");
+
+    const badge = document.getElementById("seg-fuzzer-badge");
+    const crashes = fuzz.crashes_total ?? 0;
+    badge.textContent = crashes ? `${crashes} crash${crashes === 1 ? "" : "es"}` : "";
+    badge.hidden = crashes === 0;
+  });
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
@@ -266,9 +464,33 @@
     document.getElementById("rail-filter").addEventListener("input", (e) => {
       store.setFilter({ nodes: e.target.value });
     });
+    // Timeline filter inputs
+    document.getElementById("timeline-filter").addEventListener("input", (e) => {
+      store.setFilter({ timeline: e.target.value });
+      pushHash();
+    });
+    document.getElementById("timeline-only-diverged").addEventListener("change", (e) => {
+      store.setFilter({ onlyDivergences: e.target.checked });
+      pushHash();
+    });
+    wireTimelineScroll();
+
+    // Fuzzer layer sort
+    document.querySelectorAll("#fuzz-by-layer thead th").forEach((th, i) => {
+      if (i !== 1) return; // only Divergences col toggles
+      th.addEventListener("click", () => {
+        fuzzSortDir = fuzzSortDir === "desc" ? "asc" : "desc";
+        store.set({}); // trigger re-render
+      });
+    });
     // Hash routing
     applyHashToStore();
     window.addEventListener("hashchange", applyHashToStore);
+
+    // Reflect URL filters back into inputs on load (runs after applyHashToStore)
+    const initFilters = store.get().ui.filters;
+    document.getElementById("timeline-filter").value = initFilters.timeline;
+    document.getElementById("timeline-only-diverged").checked = initFilters.onlyDivergences;
 
     // Data
     connectSSE();
