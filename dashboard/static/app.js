@@ -523,9 +523,11 @@
     }
   }
 
+  let inspectorPendingScroll = false;
   function renderInspectorLogs(s, data) {
     const logsEl = document.getElementById("inspector-logs");
     const f = s.ui.filters;
+    const wasAtBottom = logsEl.scrollHeight - logsEl.scrollTop - logsEl.clientHeight < 8;
     let entries = (data?.logs || []).slice().reverse();
     entries = entries.filter((e) => f.logLevels[levelOf(e)]);
     const q = f.logs.trim().toLowerCase();
@@ -541,7 +543,10 @@
         return `<div class="row"><span class="ts">${t}</span><span class="${klass}">${e.level}</span><span>${e.message}</span></div>`;
       }).join("");
     }
-    if (f.followTail) logsEl.scrollTop = logsEl.scrollHeight;
+    if (entries.length && (inspectorPendingScroll || (f.followTail && wasAtBottom))) {
+      logsEl.scrollTop = logsEl.scrollHeight;
+      inspectorPendingScroll = false;
+    }
   }
 
   // ── Inspector subscriber ────────────────────────────────────
@@ -557,7 +562,10 @@
 
     if (s.ui.selected !== prevSelected) {
       prevSelected = s.ui.selected;
-      if (s.ui.selected) startInspectorPolling(s.ui.selected); else stopInspectorPolling();
+      if (s.ui.selected) {
+        inspectorPendingScroll = true;
+        startInspectorPolling(s.ui.selected);
+      } else stopInspectorPolling();
     }
 
     const inspector = document.getElementById("inspector");
