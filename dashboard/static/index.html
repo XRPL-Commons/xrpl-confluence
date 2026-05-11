@@ -70,7 +70,10 @@
     <aside class="rail rail-inspector" data-pane="inspector" id="inspector">
       <header class="inspector-head">
         <span class="inspector-title" id="inspector-title">Fleet</span>
-        <button class="inspector-clear" id="inspector-clear" aria-label="Clear selection" hidden>✕</button>
+        <span class="inspector-head-actions">
+          <button class="inspector-expand" id="inspector-expand" aria-label="Expand logs" title="Expand (e)">⇔</button>
+          <button class="inspector-clear" id="inspector-clear" aria-label="Clear selection" hidden>✕</button>
+        </span>
       </header>
       <div class="inspector-state" id="inspector-state"></div>
       <div class="inspector-empty" id="inspector-empty">
@@ -106,6 +109,7 @@
           <dt>space</dt><dd>Pause / resume</dd>
           <dt>n</dt><dd>Next divergence (Timeline)</dd>
           <dt>c</dt><dd>Copy focused log / state / row</dd>
+          <dt>e</dt><dd>Expand / collapse inspector</dd>
           <dt>⌘K</dt><dd>Command palette</dd>
           <dt>tab</dt><dd>Cycle panes</dd>
           <dt>?</dt><dd>This cheatsheet</dd>

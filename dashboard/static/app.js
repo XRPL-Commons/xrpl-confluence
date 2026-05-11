@@ -721,6 +721,7 @@
       case " ": e.preventDefault(); setPaused(!store.get().ui.paused); break;
       case "n": case "N": jumpNextDivergence(); break;
       case "c": case "C": copyFocused(); break;
+      case "e": case "E": document.body.classList.toggle("wide-inspector"); break;
       case "?": document.getElementById("cheatsheet").hidden = false; break;
       case "Tab":
         e.preventDefault();
@@ -834,6 +835,9 @@
     });
     // Inspector clear
     document.getElementById("inspector-clear").addEventListener("click", () => setSelected(null));
+    document.getElementById("inspector-expand").addEventListener("click", () => {
+      document.body.classList.toggle("wide-inspector");
+    });
 
     // Log filters
     document.getElementById("log-filter").addEventListener("input", (e) => {
