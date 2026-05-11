@@ -260,3 +260,16 @@ body {
   padding: 36px 0; text-align: center;
   font: italic 12px/1.4 var(--serif); color: var(--mid);
 }
+
+.layers { width: 100%; border-collapse: collapse; margin-top: 28px; }
+.layers thead th {
+  text-align: left;
+  font: 500 11px/1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ink);
+}
+.layers tbody td { padding: 10px 0; font: 14px/1.3 var(--sans); border-bottom: 1px solid var(--rule); }
+.layers tbody td:last-child { text-align: right; font: 500 18px/1 var(--serif); }
+.layers tbody tr.crashed td:first-child { border-left: 2px solid var(--red); padding-left: 10px; }

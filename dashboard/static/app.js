@@ -20,6 +20,7 @@
       el.classList.toggle("active", el.dataset.panel === name);
     }
     if (location.hash.replace("#", "") !== name) location.hash = name;
+    updateFooterContext();
   }
 
   // ── Data layer ──────────────────────────────────────────────
@@ -33,6 +34,7 @@
     for (const fn of renderers) {
       try { fn(latest, latestFuzz); } catch (e) { console.error(e); }
     }
+    updateFooterContext();
   }
 
   async function fetchJSON(url) {
@@ -285,6 +287,49 @@
       chip.hidden = true;
       pendingNew = 0;
     });
+  }
+
+  // ── Fuzzer ──────────────────────────────────────────────────
+  function renderFuzzer(_data, fuzz) {
+    const seedEl = document.getElementById("fuzz-seed-inline");
+    if (!fuzz) {
+      seedEl.textContent = "—";
+      document.getElementById("fuzz-kpis").innerHTML = "";
+      document.querySelector("#fuzz-by-layer tbody").innerHTML = "";
+      return;
+    }
+    seedEl.textContent = `#${fuzz.current_seed ?? "—"}`;
+    const kpis = [
+      { lbl: "Submitted", num: fuzz.txs_submitted_total ?? "—" },
+      { lbl: "Applied", num: fuzz.txs_applied_total ?? "—" },
+      { lbl: "Divergences", num: fuzz.divergences_total ?? "—" },
+      { lbl: "Crashes", num: fuzz.crashes_total ?? "—" },
+      { lbl: "Seed", num: fuzz.current_seed ?? "—", mono: true },
+    ];
+    document.getElementById("fuzz-kpis").innerHTML = kpis.map((k) =>
+      `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num ${k.mono ? "mono" : ""}">${k.num}</div></div>`
+    ).join("");
+
+    // The fuzz API exposes only a total crash count (no per-layer breakdown),
+    // so when any crash exists we mark every divergent row — "the fuzzer is
+    // in a crashed state, every layer is suspect" — rather than guess which.
+    const layerEntries = Object.entries(fuzz.divergences_total_by_layer ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    const anyCrash = (fuzz.crashes_total ?? 0) > 0;
+    document.querySelector("#fuzz-by-layer tbody").innerHTML = layerEntries.map(([layer, count]) =>
+      `<tr class="${anyCrash ? "crashed" : ""}"><td>${layer}</td><td>${count}</td></tr>`
+    ).join("");
+  }
+  renderers.push(renderFuzzer);
+
+  // Update footer context to reflect active tab
+  function updateFooterContext() {
+    const tab = currentTab();
+    const seqs = (latest.nodes || []).map((n) => n.validated_ledger?.seq).filter(Boolean);
+    const maxSeq = seqs.length ? Math.max(...seqs) : null;
+    const ctx = document.getElementById("footer-ctx");
+    if (tab === "fuzzer" && latestFuzz) ctx.innerHTML = `· seed <span class="mono">#${latestFuzz.current_seed}</span>`;
+    else if (maxSeq) ctx.innerHTML = `· ledger <span class="mono">${maxSeq.toLocaleString("en-US")}</span>`;
+    else ctx.textContent = "";
   }
 
   // ── Drawer ──────────────────────────────────────────────────
