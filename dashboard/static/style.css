@@ -156,3 +156,21 @@ body {
 .node-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .node-mini .l { font: 500 10px/1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mid); }
 .node-mini .v { font: 500 13px/1.2 var(--mono); margin-top: 4px; color: var(--ink); }
+
+.topology-svg { width: 100%; height: auto; display: block; margin: 4px 0 12px; }
+.topo-link        { stroke: var(--ink); stroke-width: 1; }
+.topo-link.active { stroke: var(--cobalt); }
+.topo-node-circle           { fill: var(--ink); stroke: var(--paper); stroke-width: 2; transition: fill 0.4s ease; }
+.topo-node-circle.unreachable { fill: var(--red); }
+.topo-node-circle.warn        { fill: var(--mustard); }
+.topo-node-circle.hovered, .topo-node-circle.selected {
+  stroke: var(--ink); stroke-width: 3;
+}
+.topo-node-label {
+  font: italic 11px/1 var(--serif);
+  fill: var(--ink);
+  text-anchor: middle;
+  dominant-baseline: hanging;
+  pointer-events: none;
+}
+.topo-node      { cursor: pointer; }

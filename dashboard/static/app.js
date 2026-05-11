@@ -156,6 +156,40 @@
   }
   renderers.push(renderNodes);
 
+  // ── Topology ────────────────────────────────────────────────
+  function renderTopology(data) {
+    const svg = document.getElementById("topology-svg");
+    const nodes = data.nodes || [];
+    if (!nodes.length) { svg.innerHTML = ""; return; }
+    const W = 700, H = 520, cx = W / 2, cy = H / 2 - 20, R = Math.min(W, H) / 2 - 80;
+    const pos = nodes.map((_, i) => {
+      const a = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+      return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+    });
+
+    let html = "";
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const cls = nodes[i].status === "ok" && nodes[j].status === "ok" ? "active" : "";
+        html += `<line class="topo-link ${cls}" x1="${pos[i].x}" y1="${pos[i].y}" x2="${pos[j].x}" y2="${pos[j].y}"/>`;
+      }
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i], p = pos[i];
+      const cls = n.status !== "ok" ? "unreachable" : (HEALTHY.has(n.server_state) ? "" : "warn");
+      html += `<g class="topo-node" data-name="${n.name}">
+        <circle class="topo-node-circle ${cls}" cx="${p.x}" cy="${p.y}" r="14"/>
+        <text class="topo-node-label" x="${p.x}" y="${p.y + 22}">${n.name}</text>
+      </g>`;
+    }
+    svg.innerHTML = html;
+
+    for (const g of svg.querySelectorAll(".topo-node")) {
+      g.addEventListener("click", () => openDrawer(g.dataset.name));
+    }
+  }
+  renderers.push(renderTopology);
+
   // Placeholder until Task 8 implements it
   function openDrawer(name) { console.log("openDrawer", name); }
 
