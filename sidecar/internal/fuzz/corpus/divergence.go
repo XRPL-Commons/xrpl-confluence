@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -33,9 +34,12 @@ func NewRecorder(baseDir string, seed uint64) *Recorder {
 }
 
 // RecordDivergence writes one divergence JSON file under
-// `<baseDir>/divergences/<timestamp>_<counter>.json`. Filename includes a
-// monotonic counter so concurrent callers never collide.
-func (r *Recorder) RecordDivergence(d *Divergence) error {
+// `<baseDir>/divergences/<timestamp>_<counter>.json` and updates the per-
+// signature index under `<baseDir>/signatures/<key>/`. Returns isFirstSeen
+// = true if this signature has not been recorded before in this Recorder's
+// lifetime, false otherwise. Filename includes a monotonic counter so
+// concurrent callers never collide.
+func (r *Recorder) RecordDivergence(d *Divergence) (bool, error) {
 	if d.Seed == 0 {
 		d.Seed = r.seed
 	}
@@ -45,7 +49,7 @@ func (r *Recorder) RecordDivergence(d *Divergence) error {
 
 	dir := filepath.Join(r.baseDir, "divergences")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
+		return false, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
 	n := r.counter.Add(1)
@@ -54,10 +58,46 @@ func (r *Recorder) RecordDivergence(d *Divergence) error {
 
 	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal divergence: %w", err)
+		return false, fmt.Errorf("marshal divergence: %w", err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+		return false, fmt.Errorf("write %s: %w", path, err)
 	}
-	return nil
+
+	first, err := r.updateSignatureIndex(d, data)
+	if err != nil {
+		// Index failure must not lose the divergence file we already wrote.
+		// Surface the error to the caller alongside firstSeen=false.
+		return false, fmt.Errorf("signature index: %w", err)
+	}
+	return first, nil
+}
+
+func (r *Recorder) updateSignatureIndex(d *Divergence, data []byte) (bool, error) {
+	key := Signature(d).Key()
+	if key == "" {
+		return false, nil
+	}
+	idx := filepath.Join(r.baseDir, "signatures", key)
+	if err := os.MkdirAll(idx, 0o755); err != nil {
+		return false, err
+	}
+	firstPath := filepath.Join(idx, "first.json")
+	first := false
+	if _, err := os.Stat(firstPath); os.IsNotExist(err) {
+		if err := os.WriteFile(firstPath, data, 0o644); err != nil {
+			return false, err
+		}
+		first = true
+	}
+	countPath := filepath.Join(idx, "count.txt")
+	count := 0
+	if cb, err := os.ReadFile(countPath); err == nil {
+		fmt.Sscanf(strings.TrimSpace(string(cb)), "%d", &count)
+	}
+	count++
+	if err := os.WriteFile(countPath, []byte(fmt.Sprintf("%d\n", count)), 0o644); err != nil {
+		return false, err
+	}
+	return first, nil
 }

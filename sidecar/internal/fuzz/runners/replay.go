@@ -132,7 +132,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 			cmp := orc.CompareTxResult(ctx, res.TxHash)
 			if !cmp.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				_, _ = rec.RecordDivergence(&corpus.Divergence{
 					Kind:        "tx_result",
 					Description: fmt.Sprintf("tx %s disagreed (replay)", res.TxHash),
 					Details: map[string]any{
@@ -145,7 +145,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 			meta := orc.CompareTxMetadata(ctx, res.TxHash)
 			if !meta.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				_, _ = rec.RecordDivergence(&corpus.Divergence{
 					Kind:        "metadata",
 					Description: fmt.Sprintf("tx %s metadata diverged (replay)", res.TxHash),
 					Details: map[string]any{
@@ -165,7 +165,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 					atomic.AddInt64(&stats.LedgersCompared, 1)
 					if !cmp.Agreed {
 						atomic.AddInt64(&stats.Divergences, 1)
-						_ = rec.RecordDivergence(&corpus.Divergence{
+						_, _ = rec.RecordDivergence(&corpus.Divergence{
 							Kind:        "state_hash",
 							Description: fmt.Sprintf("ledger %d diverged (replay)", seq),
 							Details:     map[string]any{"comparison": cmp},
@@ -174,7 +174,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 				}
 				if err := inv.CheckLedger(submit); err != nil {
 					atomic.AddInt64(&stats.Divergences, 1)
-					_ = rec.RecordDivergence(&corpus.Divergence{
+					_, _ = rec.RecordDivergence(&corpus.Divergence{
 						Kind:        "invariant",
 						Description: err.Error(),
 						Details:     map[string]any{"invariant": "pool_balance_monotone"},

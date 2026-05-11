@@ -1,4 +1,31 @@
 [
-  {"step": 50,  "recover_after": 25, "type": "restart", "container": "rippled-1"},
-  {"step": 150, "recover_after": 30, "type": "latency", "container": "rippled-0", "iface": "eth0", "delay_ms": 200}
+  {"step": 50, "recover_after": 25, "type": "restart", "container": "rippled-1"},
+  {
+    "type": "recurring",
+    "recurring": {
+      "every": 600,
+      "until_step": 12000,
+      "jitter": 30,
+      "event": {
+        "type": "latency",
+        "container": "rippled-*",
+        "iface": "eth0",
+        "delay_ms_min": 50,
+        "delay_ms_max": 500,
+        "recover_after": 120
+      }
+    }
+  },
+  {
+    "type": "recurring",
+    "recurring": {
+      "every": 1500,
+      "until_step": 12000,
+      "event": {
+        "type": "restart",
+        "container": "rippled-*",
+        "recover_after": 30
+      }
+    }
+  }
 ]

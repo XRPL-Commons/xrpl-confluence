@@ -55,5 +55,14 @@ def run(plan, nodes, args = {}):
         rotate_every = rotate_every,
         mutation_rate = mutation_rate,
         accounts = accounts,
+        alert_webhook_url = args.get("alert_webhook_url", ""),
     )
+
+    if args.get("enable_observability", False):
+        prom = import_module("../sidecar/prometheus.star")
+        graf = import_module("../sidecar/grafana.star")
+        prom.launch(plan, fuzz_service_name = "fuzz-chaos")
+        graf.launch(plan, prometheus_service_name = "prometheus")
+        plan.print("observability: prometheus on :9090, grafana on :3000 (anonymous viewer)")
+
     return {"fuzz-chaos": svc}

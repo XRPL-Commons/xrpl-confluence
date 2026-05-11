@@ -61,7 +61,7 @@ func Reproduce(ctx context.Context, cfg ReproduceConfig) (*Stats, error) {
 			cmp := orc.CompareTxResult(ctx, res.TxHash)
 			if !cmp.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				_, _ = rec.RecordDivergence(&corpus.Divergence{
 					Kind:        "tx_result",
 					Description: fmt.Sprintf("tx %s disagreed at step %d (reproduce)", res.TxHash, i),
 					Details: map[string]any{
@@ -72,7 +72,7 @@ func Reproduce(ctx context.Context, cfg ReproduceConfig) (*Stats, error) {
 			meta := orc.CompareTxMetadata(ctx, res.TxHash)
 			if !meta.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
-				_ = rec.RecordDivergence(&corpus.Divergence{
+				_, _ = rec.RecordDivergence(&corpus.Divergence{
 					Kind:        "metadata",
 					Description: fmt.Sprintf("tx %s metadata diverged at step %d (reproduce)", res.TxHash, i),
 					Details: map[string]any{
