@@ -10,69 +10,112 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="poster" data-tab="overview">
+  <main class="workbench">
 
-    <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="overview" role="tab">Overview</button>
-      <button class="tab" data-tab="nodes" role="tab">Nodes</button>
-      <button class="tab" data-tab="topology" role="tab">Topology</button>
-      <button class="tab" data-tab="timeline" role="tab">Timeline</button>
-      <button class="tab" data-tab="fuzzer" role="tab">Fuzzer</button>
+    <header class="topbar">
+      <span class="brand">XRPL Confluence</span>
       <div class="sync" id="sync-badge">
         <span class="sync-dot"></span>
         <span class="sync-label" id="sync-label">CONNECTING</span>
       </div>
-    </nav>
+      <button class="pause-btn" id="pause-btn" aria-pressed="false" title="Pause (space)">⏸</button>
+      <span class="pending-chip" id="pending-chip" hidden>+<span id="pending-count">0</span> pending</span>
+      <button class="palette-btn" id="palette-btn" title="Command palette (⌘K)">⌘K</button>
+      <span class="topbar-ctx" id="topbar-ctx">—</span>
+    </header>
 
-    <section class="panel active" data-panel="overview" role="tabpanel">
-      <h1 class="title">Network Overview.</h1>
-      <p class="subtitle">Live interop status across goXRPL ↔ rippled.</p>
-      <div class="kpis kpis-2x2" id="overview-kpis"></div>
-      <table class="summary" id="overview-summary"><tbody></tbody></table>
-    </section>
-
-    <section class="panel" data-panel="nodes" role="tabpanel">
-      <h1 class="title">Nodes.</h1>
-      <p class="subtitle">Click any card to inspect.</p>
-      <div class="node-grid" id="node-grid"></div>
-    </section>
-
-    <section class="panel" data-panel="topology" role="tabpanel">
-      <h1 class="title">Topology.</h1>
-      <p class="subtitle">Click a node to inspect its logs.</p>
-      <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
-    </section>
-
-    <section class="panel" data-panel="timeline" role="tabpanel">
-      <h1 class="title">Ledger Timeline.</h1>
-      <p class="subtitle">Latest closes, newest at bottom.</p>
-      <div class="timeline" id="timeline-list"></div>
-      <button class="new-chip" id="timeline-new-chip" hidden>↓ <span id="timeline-new-count">0</span> new</button>
-    </section>
-
-    <section class="panel" data-panel="fuzzer" role="tabpanel">
-      <h1 class="title">Fuzzer.</h1>
-      <p class="subtitle">Seed <span id="fuzz-seed-inline" class="mono">—</span></p>
-      <div class="kpis kpis-1x5" id="fuzz-kpis"></div>
-      <table class="layers" id="fuzz-by-layer">
-        <thead><tr><th>Layer</th><th>Divergences</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <aside class="drawer" id="drawer">
-      <div class="drawer-resize" id="drawer-resize"></div>
-      <header class="drawer-head">
-        <span class="drawer-title" id="drawer-title">—</span>
-        <button class="drawer-close" id="drawer-close" aria-label="Close">✕</button>
-      </header>
-      <div class="drawer-state" id="drawer-state"></div>
-      <div class="drawer-logs" id="drawer-logs"></div>
+    <aside class="rail rail-nodes" data-pane="rail" id="rail-nodes">
+      <div class="rail-head">
+        <span class="rail-label">Nodes</span>
+        <input class="rail-filter" id="rail-filter" type="text" placeholder="/ filter" />
+      </div>
+      <div class="node-list" id="node-list"></div>
+      <div class="rail-kpis" id="rail-kpis"></div>
     </aside>
 
-    <footer class="footer">
-      <span class="footer-line">Last update · <span id="footer-age">—</span> <span id="footer-ctx"></span></span>
-    </footer>
+    <section class="main" data-pane="main" id="main">
+      <nav class="main-switch" id="main-switch" role="tablist">
+        <button class="seg active" data-view="timeline" role="tab">Timeline<span class="seg-badge" id="seg-timeline-badge" hidden></span></button>
+        <button class="seg" data-view="topology" role="tab">Topology</button>
+        <button class="seg" data-view="fuzzer" role="tab">Fuzzer<span class="seg-badge" id="seg-fuzzer-badge" hidden></span></button>
+      </nav>
+
+      <div class="view view-timeline active" data-view="timeline">
+        <h1 class="title">Ledger Timeline.</h1>
+        <div class="view-controls">
+          <input class="view-filter" id="timeline-filter" type="text" placeholder="/ filter seq or hash" />
+          <label class="chip-toggle"><input type="checkbox" id="timeline-only-diverged" /> only divergences</label>
+        </div>
+        <div class="timeline" id="timeline-list"></div>
+        <button class="new-chip" id="timeline-new-chip" hidden>↓ <span id="timeline-new-count">0</span> new</button>
+      </div>
+
+      <div class="view view-topology" data-view="topology">
+        <h1 class="title">Topology.</h1>
+        <p class="subtitle">Click a node to inspect its logs.</p>
+        <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+
+      <div class="view view-fuzzer" data-view="fuzzer">
+        <h1 class="title">Fuzzer.</h1>
+        <p class="subtitle">Seed <span id="fuzz-seed-inline" class="mono">—</span></p>
+        <div class="kpis kpis-1x5" id="fuzz-kpis"></div>
+        <table class="layers" id="fuzz-by-layer">
+          <thead><tr><th>Layer</th><th>Divergences</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="rail rail-inspector" data-pane="inspector" id="inspector">
+      <header class="inspector-head">
+        <span class="inspector-title" id="inspector-title">Fleet</span>
+        <span class="inspector-head-actions">
+          <button class="inspector-expand" id="inspector-expand" aria-label="Expand logs" title="Expand (e)">⇔</button>
+          <button class="inspector-clear" id="inspector-clear" aria-label="Clear selection" hidden>✕</button>
+        </span>
+      </header>
+      <div class="inspector-state" id="inspector-state"></div>
+      <div class="inspector-empty" id="inspector-empty">
+        <table class="summary" id="overview-summary"><tbody></tbody></table>
+      </div>
+      <div class="inspector-logs-head" id="inspector-logs-head" hidden>
+        <div class="log-levels">
+          <button class="log-chip active" data-level="ok">ok</button>
+          <button class="log-chip active" data-level="warn">warn</button>
+          <button class="log-chip active" data-level="err">err</button>
+        </div>
+        <input class="log-filter" id="log-filter" type="text" placeholder="/ filter" />
+        <label class="chip-toggle"><input type="checkbox" id="log-follow" checked /> follow</label>
+      </div>
+      <div class="inspector-logs" id="inspector-logs" hidden></div>
+    </aside>
+
+    <div class="overlay" id="palette" hidden>
+      <div class="palette-card">
+        <input class="palette-input" id="palette-input" placeholder="Type to filter…" />
+        <ul class="palette-list" id="palette-list"></ul>
+      </div>
+    </div>
+
+    <div class="overlay" id="cheatsheet" hidden>
+      <div class="cheatsheet-card">
+        <h2>Shortcuts</h2>
+        <dl>
+          <dt>1 / 2 / 3</dt><dd>Timeline / Topology / Fuzzer</dd>
+          <dt>j / k</dt><dd>Walk focused list</dd>
+          <dt>/</dt><dd>Focus filter</dd>
+          <dt>esc</dt><dd>Clear filter → selection → collapse inspector</dd>
+          <dt>space</dt><dd>Pause / resume</dd>
+          <dt>n</dt><dd>Next divergence (Timeline)</dd>
+          <dt>c</dt><dd>Copy focused log / state / row</dd>
+          <dt>e</dt><dd>Expand / collapse inspector</dd>
+          <dt>⌘K</dt><dd>Command palette</dd>
+          <dt>tab</dt><dd>Cycle panes</dd>
+          <dt>?</dt><dd>This cheatsheet</dd>
+        </dl>
+      </div>
+    </div>
 
   </main>
   <script src="/app.js"></script>
