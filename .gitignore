@@ -10,3 +10,7 @@
 # Kurtosis
 .kurtosis/
 .claude/
+
+# Brainstorming sessions / worktrees
+.superpowers/
+.worktrees/
