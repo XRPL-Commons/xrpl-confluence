@@ -93,6 +93,7 @@
 
   function setActivePane(pane) {
     if (!PANES.includes(pane)) return;
+    if (store.get().ui.activePane === pane) return;
     store.setUI({ activePane: pane });
   }
 
@@ -221,8 +222,12 @@
         <span class="node-name">${n.name}</span>
       </div>
     `).join("");
-    for (const row of list.querySelectorAll(".node-row")) {
-      row.addEventListener("click", () => setSelected(row.dataset.name));
+    if (!list.dataset.delegated) {
+      list.addEventListener("click", (e) => {
+        const row = e.target.closest(".node-row");
+        if (row && row.dataset.name) setSelected(row.dataset.name);
+      });
+      list.dataset.delegated = "1";
     }
   });
 
@@ -790,9 +795,11 @@
     }
     // Wire pause
     document.getElementById("pause-btn").addEventListener("click", () => setPaused(!store.get().ui.paused));
-    // Active pane on click
+    // Active pane on click (must be `click`, not `mousedown` — mousedown would
+    // run before the row's own click handler and re-render the rail mid-press,
+    // dropping the click).
     for (const el of document.querySelectorAll("[data-pane]")) {
-      el.addEventListener("mousedown", () => setActivePane(el.dataset.pane));
+      el.addEventListener("click", () => setActivePane(el.dataset.pane));
     }
     // Rail filter
     document.getElementById("rail-filter").addEventListener("input", (e) => {
