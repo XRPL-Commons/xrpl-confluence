@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/api"
 )
 
 func TestCompileSoakGolden(t *testing.T) {
@@ -45,15 +47,17 @@ func TestCompileRejectsInvalidScenario(t *testing.T) {
 
 func TestCompileRejectsReplay(t *testing.T) {
 	// Replay scenarios are not compiled directly; they flow through
-	// `confluence replay`, which composes its own kurtosis input.
+	// `confluence replay`, which composes its own kurtosis input. The
+	// scenario below is valid (passes Validate) so we exercise the explicit
+	// guard inside Compile, not the validator's replay rule.
 	s, err := Load("testdata/soak.yaml")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	s.Workload.Kind = "replay"
-	s.Workload.Reproducer = nil // intentionally invalid for replay, to exercise both paths
+	s.Workload.Reproducer = &api.WorkloadReproducer{ID: "rpr_0000000000000000000000000"}
 	if _, err := Compile(s); err == nil || !strings.Contains(err.Error(), "replay") {
-		t.Fatalf("expected replay rejection, got err=%v", err)
+		t.Fatalf("expected replay rejection from Compile guard, got err=%v", err)
 	}
 }
 
