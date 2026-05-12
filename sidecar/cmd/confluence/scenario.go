@@ -59,7 +59,11 @@ func outputValidation(cmd *cobra.Command, ok bool, errs []api.Error) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "ok")
 	} else {
 		for _, e := range errs {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", e.Field, e.Message)
+			if e.Field == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), e.Message)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", e.Field, e.Message)
+			}
 		}
 	}
 
