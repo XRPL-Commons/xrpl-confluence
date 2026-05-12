@@ -8,6 +8,10 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/api"
 )
 
+// kebabRE matches lowercase kebab-case names (letters, digits, single hyphens).
+// We're strict here because the name is reused as a Kurtosis enclave-name
+// segment in M2/M3 and exposed in finding records — keeping it conservative
+// avoids surprises across the pipeline.
 var kebabRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Validate runs all semantic rules over a Scenario and returns a flat list of
@@ -16,7 +20,7 @@ func Validate(s *api.Scenario) []api.Error {
 	var errs []api.Error
 	add := func(field, msg, hint string) {
 		errs = append(errs, api.Error{
-			Code:    "scenario_invalid",
+			Code:    api.ErrCodeScenarioInvalid,
 			Message: msg,
 			Field:   field,
 			Hint:    hint,

@@ -14,8 +14,7 @@ func TestBuiltinScenariosLoadAndCompile(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "scenarios")
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		t.Skipf("no scenarios dir at %s: %v", root, err)
-		return
+		t.Fatalf("no scenarios dir at %s: %v (expected at least one built-in scenario)", root, err)
 	}
 	var found int
 	for _, e := range entries {

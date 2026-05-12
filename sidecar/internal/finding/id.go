@@ -10,6 +10,8 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
+// ulid.Monotonic's state is not safe for concurrent use; entropyMu serializes
+// callers so two goroutines never advance the monotonic counter at the same time.
 var (
 	entropyMu sync.Mutex
 	entropy   = ulid.Monotonic(rand.Reader, 0)

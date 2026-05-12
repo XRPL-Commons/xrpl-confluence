@@ -27,7 +27,7 @@ func newScenarioValidateCmd() *cobra.Command {
 			s, err := scenario.Load(args[0])
 			if err != nil {
 				return outputValidation(cmd, false, []api.Error{{
-					Code:    "scenario_unreadable",
+					Code:    api.ErrCodeScenarioUnreadable,
 					Message: err.Error(),
 				}})
 			}

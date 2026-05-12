@@ -1,5 +1,11 @@
 package api
 
+// Error codes (closed set). Add new codes here when new endpoints introduce them.
+const (
+	ErrCodeScenarioInvalid    = "scenario_invalid"
+	ErrCodeScenarioUnreadable = "scenario_unreadable"
+)
+
 // Error is a single, machine-readable error returned by the API or CLI.
 // Code is from a closed, documented set per endpoint. Field and Hint are optional.
 type Error struct {

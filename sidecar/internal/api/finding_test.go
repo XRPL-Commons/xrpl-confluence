@@ -17,7 +17,7 @@ func TestFindingJSON(t *testing.T) {
 		Severity:  SeverityError,
 		OpenedAt:  openedAt,
 		Summary:   "goxrpl-1 disagrees with rippled-0 on AccountRoot rXYZ at ledger 1423",
-		Evidence: Evidence{
+		Evidence: &Evidence{
 			LogExcerpts: []LogExcerpt{{Node: "goxrpl-1", Lines: []string{"..."}}},
 			LedgerRange: [2]uint32{1420, 1424},
 			DiffKeys:    []string{"00...AccountRoot:rXYZ"},
@@ -51,7 +51,7 @@ func TestFindingJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &rt); err != nil {
 		t.Fatalf("roundtrip unmarshal: %v", err)
 	}
-	if rt.ID != f.ID || rt.Kind != f.Kind || rt.Evidence.LedgerRange != f.Evidence.LedgerRange {
+	if rt.ID != f.ID || rt.Kind != f.Kind || rt.Evidence == nil || rt.Evidence.LedgerRange != f.Evidence.LedgerRange {
 		t.Fatalf("roundtrip mismatch")
 	}
 }

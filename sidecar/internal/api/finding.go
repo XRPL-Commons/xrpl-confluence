@@ -35,7 +35,7 @@ type Finding struct {
 	ClosedAt            *time.Time      `json:"closed_at,omitempty"`
 	Summary             string          `json:"summary,omitempty"`
 	Detail              json.RawMessage `json:"detail,omitempty"`
-	Evidence            Evidence        `json:"evidence,omitempty"`
+	Evidence            *Evidence       `json:"evidence,omitempty"`
 	Reproducer          *Reproducer     `json:"reproducer,omitempty"`
 	SuspectedComponents []string        `json:"suspected_components,omitempty"`
 }
