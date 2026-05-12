@@ -87,6 +87,19 @@ func (s *Store) Len() int {
 	return len(s.findings)
 }
 
+// UpdateReproducer sets the Reproducer field on the finding with the given ID.
+// Returns false if the finding is not found.
+func (s *Store) UpdateReproducer(findingID string, r *api.Reproducer) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, ok := s.byID[findingID]
+	if !ok {
+		return false
+	}
+	s.findings[idx].Reproducer = r
+	return true
+}
+
 // List returns a copy of findings, filtered by opts and ordered newest-first.
 func (s *Store) List(opts ListOpts) []api.Finding {
 	s.mu.RLock()

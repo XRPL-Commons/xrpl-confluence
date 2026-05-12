@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/finding"
@@ -22,6 +23,11 @@ type Server struct {
 	logsDir        string
 	scenariosDir   string
 	mux            *http.ServeMux
+
+	runs              *runStore
+	runsMu            sync.RWMutex
+	currentRun        *Run
+	reproducerEmitter *ReproducerEmitter
 }
 
 // New creates a Server with the given options.
@@ -29,6 +35,7 @@ func New(opts ...Option) *Server {
 	s := &Server{
 		startedAt: time.Now(),
 		mux:       http.NewServeMux(),
+		runs:      newRunStore(),
 	}
 	for _, o := range opts {
 		o(s)
@@ -44,6 +51,9 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /v1/events", s.events)
 	s.mux.HandleFunc("GET /v1/scenarios", s.scenariosList)
 	s.mux.HandleFunc("POST /v1/scenarios/validate", s.scenariosValidate)
+	s.mux.HandleFunc("POST /v1/runs", s.startRun)
+	s.mux.HandleFunc("GET /v1/runs", s.listRuns)
+	s.mux.HandleFunc("GET /v1/runs/{id}", s.runByID)
 	return s
 }
 
@@ -91,4 +101,9 @@ func WithEventBus(b *EventBus) Option {
 // WithScenariosDir sets the directory scanned for built-in *.yaml scenario files.
 func WithScenariosDir(dir string) Option {
 	return func(s *Server) { s.scenariosDir = dir }
+}
+
+// WithReproducerEmitter attaches a ReproducerEmitter used when a stop_on run closes.
+func WithReproducerEmitter(e *ReproducerEmitter) Option {
+	return func(s *Server) { s.reproducerEmitter = e }
 }
