@@ -1,21 +1,25 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
-	"net/http"
+	"regexp"
 
-	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/client"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/kurtosis"
 	"github.com/spf13/cobra"
 )
 
 func newLogsCmd() *cobra.Command {
+	return newLogsCmdWith(&logsDeps{cli: kurtosis.NewExec()})
+}
+
+func newLogsCmdWith(d *logsDeps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Stream logs for a node",
-		RunE:  runLogs,
+		RunE:  d.run,
 	}
 	cmd.Flags().StringP("node", "n", "", "Node name (required)")
 	cmd.Flags().Duration("since", 0, "Only return lines from the last DURATION")
@@ -25,7 +29,11 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-func runLogs(cmd *cobra.Command, _ []string) error {
+type logsDeps struct {
+	cli kurtosis.CLI
+}
+
+func (d *logsDeps) run(cmd *cobra.Command, _ []string) error {
 	node, _ := cmd.Flags().GetString("node")
 	if node == "" {
 		return fmt.Errorf("--node flag required")
@@ -36,39 +44,34 @@ func runLogs(cmd *cobra.Command, _ []string) error {
 		ctx = context.Background()
 	}
 
-	controlURL, err := resolveControlURL(ctx, cmd, kurtosis.NewExec())
-	if err != nil {
-		return err
-	}
-
-	since, _ := cmd.Flags().GetDuration("since")
-	grep, _ := cmd.Flags().GetString("grep")
-	follow, _ := cmd.Flags().GetBool("follow")
-	limit, _ := cmd.Flags().GetInt("limit")
-
-	opts := []client.Option{}
-	if follow {
-		opts = append(opts, client.WithHTTPClient(&http.Client{}))
-	}
-
-	c := client.New(controlURL, opts...)
-
-	stream, err := c.Logs(ctx, node, since, grep, follow, limit)
+	enclave, err := resolveEnclave(cmd, ctx, d.cli)
 	if err != nil {
 		return fmt.Errorf("logs: %w", err)
 	}
-	defer stream.Close()
 
-	done := make(chan error, 1)
-	go func() {
-		_, copyErr := io.Copy(cmd.OutOrStdout(), stream)
-		done <- copyErr
-	}()
+	follow, _ := cmd.Flags().GetBool("follow")
+	grep, _ := cmd.Flags().GetString("grep")
 
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-done:
-		return err
+	w := cmd.OutOrStdout()
+	if grep != "" {
+		re, err := regexp.Compile(grep)
+		if err != nil {
+			return fmt.Errorf("--grep: invalid regex: %w", err)
+		}
+		pr, pw := io.Pipe()
+		go func() {
+			err := kurtosis.ServiceLogs(ctx, d.cli, enclave, node, follow, pw)
+			pw.CloseWithError(err)
+		}()
+		scanner := bufio.NewScanner(pr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if re.MatchString(line) {
+				fmt.Fprintln(w, line)
+			}
+		}
+		return scanner.Err()
 	}
+
+	return kurtosis.ServiceLogs(ctx, d.cli, enclave, node, follow, w)
 }

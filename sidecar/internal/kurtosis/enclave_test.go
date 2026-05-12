@@ -103,9 +103,9 @@ func TestRemoveEnclave_OtherError(t *testing.T) {
 	}
 }
 
-const enclaveListOutput = `Name          UUID          Status
-my-enclave    aaabbbccc     RUNNING
-other-enc     dddeeefff     STOPPED
+const enclaveListOutput = `UUID           Name          Status    Creation Time
+aaabbbccc111   my-enclave    RUNNING   Tue, 12 May 2026 18:16:03 CEST
+dddeeefff222   other-enc     STOPPED   Mon, 11 May 2026 09:00:00 CEST
 `
 
 func TestListEnclaves_ParsesRows(t *testing.T) {

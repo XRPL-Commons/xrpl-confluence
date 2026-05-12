@@ -133,23 +133,30 @@ func ListEnclaves(ctx context.Context, cli CLI) ([]string, error) {
 
 	var names []string
 	scanner := bufio.NewScanner(&stdout)
-	header := true
+	nameIdx := 1 // default: Name is the second column (after UUID)
+	headerParsed := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
-		// Skip the header row (contains "Name" or dashes).
-		if header {
-			header = false
+		if !headerParsed {
+			headerParsed = true
+			// Determine which column is "Name".
+			for i, f := range strings.Fields(trimmed) {
+				if strings.EqualFold(f, "name") {
+					nameIdx = i
+					break
+				}
+			}
 			continue
 		}
 		fields := strings.Fields(trimmed)
-		if len(fields) == 0 {
+		if len(fields) <= nameIdx {
 			continue
 		}
-		names = append(names, fields[0])
+		names = append(names, fields[nameIdx])
 	}
 	return names, nil
 }
