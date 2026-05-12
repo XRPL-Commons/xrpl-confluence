@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/api"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/finding"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/server"
 )
@@ -32,11 +33,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	bus := server.NewEventBus()
+
 	findingStore := finding.NewStore()
+	findingStore.SetOnAdd(func(f api.Finding) {
+		bus.Publish(server.Event{Type: "finding", Payload: f, Ts: f.OpenedAt.UnixMilli()})
+	})
 	watcher := finding.NewDiskWatcher(*findingsDir, findingStore, 1*time.Second)
 	watcher.Start(ctx)
 
-	opts := []server.Option{server.WithFindingStore(findingStore), server.WithLogsDir(*logsDir)}
+	opts := []server.Option{server.WithFindingStore(findingStore), server.WithLogsDir(*logsDir), server.WithEventBus(bus)}
 	if *scenario != "" {
 		opts = append(opts, server.WithScenario(*scenario))
 	}
@@ -56,6 +62,7 @@ func main() {
 			log.Fatalf("nodes-config parse: %v", err)
 		}
 		poller := server.NewNodePoller(file.Nodes, *pollInterval)
+		poller.SetEventBus(bus)
 		poller.Start(ctx)
 		opts = append(opts, server.WithNodePoller(poller))
 

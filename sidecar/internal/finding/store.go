@@ -25,17 +25,27 @@ type Store struct {
 	mu       sync.RWMutex
 	findings []api.Finding
 	byID     map[string]int // id → index in findings
+
+	onAdd func(api.Finding)
 }
 
 func NewStore() *Store {
 	return &Store{byID: make(map[string]int)}
 }
 
-// Add appends f to the store. If the store is at capacity the oldest finding
-// is evicted first.
-func (s *Store) Add(f api.Finding) {
+// SetOnAdd registers a callback invoked (outside the store's lock) each time a
+// finding is added. It replaces any previously registered callback.
+func (s *Store) SetOnAdd(fn func(api.Finding)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.onAdd = fn
+}
+
+// Add appends f to the store. If the store is at capacity the oldest finding
+// is evicted first. Any registered SetOnAdd callback is invoked after the
+// lock is released.
+func (s *Store) Add(f api.Finding) {
+	s.mu.Lock()
 
 	if len(s.findings) >= maxCapacity {
 		oldest := s.findings[0]
@@ -49,6 +59,13 @@ func (s *Store) Add(f api.Finding) {
 
 	s.byID[f.ID] = len(s.findings)
 	s.findings = append(s.findings, f)
+	cb := s.onAdd
+
+	s.mu.Unlock()
+
+	if cb != nil {
+		cb(f)
+	}
 }
 
 // GetByID returns the finding with the given ID, or (zero, false) if not found.

@@ -61,6 +61,9 @@ type NodePoller struct {
 	mu    sync.RWMutex
 	nodes map[string]Node
 
+	busMu    sync.RWMutex
+	eventBus *EventBus
+
 	stopOnce sync.Once
 	stopCh   chan struct{}
 }
@@ -91,6 +94,13 @@ func (p *NodePoller) Start(ctx context.Context) {
 // Stop signals all polling goroutines to exit.
 func (p *NodePoller) Stop() {
 	p.stopOnce.Do(func() { close(p.stopCh) })
+}
+
+// SetEventBus attaches an EventBus; a node snapshot is published after each poll.
+func (p *NodePoller) SetEventBus(b *EventBus) {
+	p.busMu.Lock()
+	defer p.busMu.Unlock()
+	p.eventBus = b
 }
 
 // Snapshot returns the latest aggregated state of all nodes.
@@ -185,4 +195,22 @@ func (p *NodePoller) poll(cfg NodeConfig) {
 	}
 
 	p.nodes[cfg.Name] = n
+
+	p.busMu.RLock()
+	bus := p.eventBus
+	p.busMu.RUnlock()
+
+	if bus != nil {
+		snap := p.snapshotLocked()
+		bus.Publish(Event{Type: "node", Payload: snap, Ts: snap.Timestamp})
+	}
+}
+
+// snapshotLocked builds a NodesResponse while p.mu is already held.
+func (p *NodePoller) snapshotLocked() NodesResponse {
+	nodes := make([]Node, 0, len(p.cfgs))
+	for _, cfg := range p.cfgs {
+		nodes = append(nodes, p.nodes[cfg.Name])
+	}
+	return NodesResponse{Timestamp: time.Now().UnixMilli(), Nodes: nodes}
 }

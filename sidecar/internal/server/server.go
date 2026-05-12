@@ -18,6 +18,7 @@ type Server struct {
 	budgetDeadline time.Time
 	nodePoller     *NodePoller
 	findingStore   *finding.Store
+	eventBus       *EventBus
 	logsDir        string
 	mux            *http.ServeMux
 }
@@ -39,6 +40,7 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /v1/findings", s.findingsList)
 	s.mux.HandleFunc("GET /v1/findings/{id}", s.findingsByID)
 	s.mux.HandleFunc("GET /v1/logs", s.logs)
+	s.mux.HandleFunc("GET /v1/events", s.events)
 	return s
 }
 
@@ -76,4 +78,9 @@ func WithFindingStore(fs *finding.Store) Option {
 // WithLogsDir sets the directory from which per-node log files are read.
 func WithLogsDir(dir string) Option {
 	return func(s *Server) { s.logsDir = dir }
+}
+
+// WithEventBus attaches an EventBus used by the GET /v1/events SSE endpoint.
+func WithEventBus(b *EventBus) Option {
+	return func(s *Server) { s.eventBus = b }
 }
