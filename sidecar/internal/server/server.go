@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -13,6 +14,7 @@ type Server struct {
 	startedAt      time.Time
 	scenario       string
 	budgetDeadline time.Time
+	nodePoller     *NodePoller
 	mux            *http.ServeMux
 }
 
@@ -26,7 +28,16 @@ func New(opts ...Option) *Server {
 		o(s)
 	}
 	s.mux.HandleFunc("/v1/healthz", s.healthz)
+	if s.nodePoller != nil {
+		s.mux.HandleFunc("/v1/nodes", s.nodes)
+	}
 	return s
+}
+
+func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
+	snap := s.nodePoller.Snapshot()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(snap)
 }
 
 // Handler returns the configured HTTP handler.
@@ -42,4 +53,9 @@ func WithScenario(name string) Option {
 // WithBudget sets the absolute deadline for the run budget.
 func WithBudget(deadline time.Time) Option {
 	return func(s *Server) { s.budgetDeadline = deadline }
+}
+
+// WithNodePoller attaches a NodePoller and registers GET /v1/nodes.
+func WithNodePoller(p *NodePoller) Option {
+	return func(s *Server) { s.nodePoller = p }
 }

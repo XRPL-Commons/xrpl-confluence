@@ -86,7 +86,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("server_info: %w", err)
 	}
-	lastCompared := info.Validated.Seq
+	lastCompared := info.ValidatedLedger.Seq
 
 	var stats Stats
 	stats.Seed = cfg.Seed
@@ -160,7 +160,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 			time.Sleep(cfg.BatchClose)
 			info, err := submit.ServerInfo()
 			if err == nil {
-				for seq := lastCompared + 1; seq <= info.Validated.Seq; seq++ {
+				for seq := lastCompared + 1; seq <= info.ValidatedLedger.Seq; seq++ {
 					cmp := orc.CompareAtSequence(ctx, seq)
 					atomic.AddInt64(&stats.LedgersCompared, 1)
 					if !cmp.Agreed {
@@ -180,7 +180,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 						Details:     map[string]any{"invariant": "pool_balance_monotone"},
 					})
 				}
-				lastCompared = info.Validated.Seq
+				lastCompared = info.ValidatedLedger.Seq
 			}
 		}
 		i++

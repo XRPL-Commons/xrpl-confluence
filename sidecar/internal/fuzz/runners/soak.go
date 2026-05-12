@@ -117,7 +117,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 					if err != nil {
 						return 0, err
 					}
-					return int64(info.Validated.Seq), nil
+					return int64(info.ValidatedLedger.Seq), nil
 				}
 			}
 			return 0, fmt.Errorf("unknown node %q", name)

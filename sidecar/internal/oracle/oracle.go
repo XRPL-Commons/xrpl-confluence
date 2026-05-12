@@ -182,7 +182,7 @@ func (o *Oracle) waitForValidated(ctx context.Context, node Node, seq int) error
 			continue
 		}
 
-		if info.Validated.Seq >= seq {
+		if info.ValidatedLedger.Seq >= seq {
 			return nil
 		}
 

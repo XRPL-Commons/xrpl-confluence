@@ -157,8 +157,8 @@ func waitForValidation(client *rpcclient.Client, advance int, timeout time.Durat
 		info, err := client.ServerInfo()
 		if err == nil {
 			if startSeq < 0 {
-				startSeq = info.Validated.Seq
-			} else if info.Validated.Seq-startSeq >= advance {
+				startSeq = info.ValidatedLedger.Seq
+			} else if info.ValidatedLedger.Seq-startSeq >= advance {
 				return nil
 			}
 		}

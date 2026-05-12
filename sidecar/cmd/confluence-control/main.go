@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -17,6 +18,8 @@ func main() {
 	listen := flag.String("listen", ":8090", "address to listen on")
 	scenario := flag.String("scenario", "", "display label for the active scenario")
 	budgetDuration := flag.Duration("budget-duration", 0, "run budget duration; 0 = unbounded")
+	nodesConfig := flag.String("nodes-config", "", "path to JSON file with node list")
+	pollInterval := flag.Duration("poll-interval", 5*time.Second, "node poll interval")
 	flag.Parse()
 
 	opts := []server.Option{}
@@ -25,6 +28,25 @@ func main() {
 	}
 	if *budgetDuration > 0 {
 		opts = append(opts, server.WithBudget(time.Now().Add(*budgetDuration)))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if *nodesConfig != "" {
+		data, err := os.ReadFile(*nodesConfig)
+		if err != nil {
+			log.Fatalf("nodes-config: %v", err)
+		}
+		var file struct {
+			Nodes []server.NodeConfig `json:"nodes"`
+		}
+		if err := json.Unmarshal(data, &file); err != nil {
+			log.Fatalf("nodes-config parse: %v", err)
+		}
+		poller := server.NewNodePoller(file.Nodes, *pollInterval)
+		poller.Start(ctx)
+		opts = append(opts, server.WithNodePoller(poller))
 	}
 
 	srv := &http.Server{
@@ -42,10 +64,11 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+	cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutCancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
 		log.Fatalf("shutdown: %v", err)
 	}
 }

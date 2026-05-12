@@ -121,7 +121,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 					if err != nil {
 						return 0, err
 					}
-					return int64(info.Validated.Seq), nil
+					return int64(info.ValidatedLedger.Seq), nil
 				}
 			}
 			return 0, fmt.Errorf("unknown node %q", name)
@@ -177,7 +177,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("server_info: %w", err)
 	}
-	lastCompared := info.Validated.Seq
+	lastCompared := info.ValidatedLedger.Seq
 
 	for i := 0; i < cfg.TxCount; i++ {
 		if err := ctx.Err(); err != nil {
@@ -295,7 +295,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			}
 			info, err := submit.ServerInfo()
 			if err == nil {
-				for seq := lastCompared + 1; seq <= info.Validated.Seq; seq++ {
+				for seq := lastCompared + 1; seq <= info.ValidatedLedger.Seq; seq++ {
 					cmp := orc.CompareAtSequence(ctx, seq)
 					atomic.AddInt64(&stats.LedgersCompared, 1)
 					if !cmp.Agreed {
@@ -312,7 +312,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 						}
 					}
 				}
-				lastCompared = info.Validated.Seq
+				lastCompared = info.ValidatedLedger.Seq
 
 				if err := inv.CheckLedger(submit); err != nil {
 					atomic.AddInt64(&stats.Divergences, 1)
