@@ -11,23 +11,26 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/scenario"
 )
 
-type scenarioListItem struct {
+// ScenarioListItem is one entry in the GET /v1/scenarios response.
+type ScenarioListItem struct {
 	Name        string `json:"name"`
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
 	Path        string `json:"path"`
 }
 
-type scenarioListResponse struct {
-	Scenarios []scenarioListItem `json:"scenarios"`
+// ScenarioListResponse is the body for GET /v1/scenarios.
+type ScenarioListResponse struct {
+	Scenarios []ScenarioListItem `json:"scenarios"`
 }
 
-type validateResponse struct {
+// ValidateResponse is the body for POST /v1/scenarios/validate.
+type ValidateResponse struct {
 	OK     bool        `json:"ok"`
 	Errors []api.Error `json:"errors"`
 }
 
 func (s *Server) scenariosList(w http.ResponseWriter, r *http.Request) {
-	items := []scenarioListItem{}
+	items := []ScenarioListItem{}
 
 	if s.scenariosDir != "" {
 		entries, err := os.ReadDir(s.scenariosDir)
@@ -48,7 +51,7 @@ func (s *Server) scenariosList(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					relPath = e.Name()
 				}
-				items = append(items, scenarioListItem{
+				items = append(items, ScenarioListItem{
 					Name:        sc.Metadata.Name,
 					Description: sc.Metadata.Description,
 					Path:        relPath,
@@ -57,7 +60,7 @@ func (s *Server) scenariosList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, scenarioListResponse{Scenarios: items})
+	writeJSON(w, http.StatusOK, ScenarioListResponse{Scenarios: items})
 }
 
 func (s *Server) scenariosValidate(w http.ResponseWriter, r *http.Request) {
@@ -85,5 +88,5 @@ func (s *Server) scenariosValidate(w http.ResponseWriter, r *http.Request) {
 	if errs == nil {
 		errs = []api.Error{}
 	}
-	writeJSON(w, http.StatusOK, validateResponse{OK: len(errs) == 0, Errors: errs})
+	writeJSON(w, http.StatusOK, ValidateResponse{OK: len(errs) == 0, Errors: errs})
 }

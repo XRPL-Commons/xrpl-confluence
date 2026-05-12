@@ -8,16 +8,17 @@ import (
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/api"
 )
 
-type healthzBody struct {
+// HealthzResponse is the body for GET /v1/healthz.
+type HealthzResponse struct {
 	OK              bool   `json:"ok"`
 	APIVersion      string `json:"api_version"`
 	UptimeS         int    `json:"uptime_s"`
 	Scenario        string `json:"scenario"`
-	BudgetRemaining *int   `json:"budget_remaining_s,omitempty"`
+	BudgetRemainingS *int  `json:"budget_remaining_s,omitempty"`
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	body := healthzBody{
+	body := HealthzResponse{
 		OK:         true,
 		APIVersion: api.Version,
 		UptimeS:    int(time.Since(s.startedAt).Seconds()),
@@ -29,7 +30,7 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 		if rem < 0 {
 			rem = 0
 		}
-		body.BudgetRemaining = &rem
+		body.BudgetRemainingS = &rem
 	}
 
 	w.Header().Set("Content-Type", "application/json")
