@@ -71,14 +71,31 @@ func (c *Client) Call(method string, params interface{}) (json.RawMessage, error
 	return rpcResp.Result, nil
 }
 
+// LedgerRef holds a ledger sequence and hash.
+type LedgerRef struct {
+	Seq  int    `json:"seq"`
+	Hash string `json:"hash"`
+}
+
+// LastClose holds consensus close statistics from server_info.
+type LastClose struct {
+	Proposers     int     `json:"proposers"`
+	ConvergeTimeS float64 `json:"converge_time_s"`
+}
+
 // ServerInfoResult holds relevant fields from server_info.
 type ServerInfoResult struct {
-	ServerState string `json:"server_state"`
-	Peers       int    `json:"peers"`
-	Validated   struct {
-		Seq  int    `json:"seq"`
-		Hash string `json:"hash"`
-	}
+	ServerState        string
+	BuildVersion       string
+	Uptime             int
+	Peers              int
+	CompleteLedgers    string
+	ValidatedLedger    LedgerRef
+	ClosedLedger       LedgerRef
+	LedgerCurrentIndex int
+	NetworkID          int
+	PubkeyNode         string
+	LastClose          LastClose
 }
 
 // ServerInfo calls server_info and returns parsed results.
@@ -90,12 +107,17 @@ func (c *Client) ServerInfo() (*ServerInfoResult, error) {
 
 	var wrapper struct {
 		Info struct {
-			ServerState     string `json:"server_state"`
-			Peers           int    `json:"peers"`
-			ValidatedLedger struct {
-				Seq  int    `json:"seq"`
-				Hash string `json:"hash"`
-			} `json:"validated_ledger"`
+			ServerState        string    `json:"server_state"`
+			BuildVersion       string    `json:"build_version"`
+			Uptime             int       `json:"uptime"`
+			Peers              int       `json:"peers"`
+			CompleteLedgers    string    `json:"complete_ledgers"`
+			NetworkID          int       `json:"network_id"`
+			PubkeyNode         string    `json:"pubkey_node"`
+			LedgerCurrentIndex int       `json:"ledger_current_index"`
+			ValidatedLedger    LedgerRef `json:"validated_ledger"`
+			ClosedLedger       LedgerRef `json:"closed_ledger"`
+			LastClose          LastClose `json:"last_close"`
 		} `json:"info"`
 	}
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
@@ -103,15 +125,17 @@ func (c *Client) ServerInfo() (*ServerInfoResult, error) {
 	}
 
 	return &ServerInfoResult{
-		ServerState: wrapper.Info.ServerState,
-		Peers:       wrapper.Info.Peers,
-		Validated: struct {
-			Seq  int    `json:"seq"`
-			Hash string `json:"hash"`
-		}{
-			Seq:  wrapper.Info.ValidatedLedger.Seq,
-			Hash: wrapper.Info.ValidatedLedger.Hash,
-		},
+		ServerState:        wrapper.Info.ServerState,
+		BuildVersion:       wrapper.Info.BuildVersion,
+		Uptime:             wrapper.Info.Uptime,
+		Peers:              wrapper.Info.Peers,
+		CompleteLedgers:    wrapper.Info.CompleteLedgers,
+		ValidatedLedger:    wrapper.Info.ValidatedLedger,
+		ClosedLedger:       wrapper.Info.ClosedLedger,
+		LedgerCurrentIndex: wrapper.Info.LedgerCurrentIndex,
+		NetworkID:          wrapper.Info.NetworkID,
+		PubkeyNode:         wrapper.Info.PubkeyNode,
+		LastClose:          wrapper.Info.LastClose,
 	}, nil
 }
 

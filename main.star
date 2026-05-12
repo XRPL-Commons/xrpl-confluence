@@ -11,6 +11,7 @@ topology = import_module("./src/topology.star")
 tests = import_module("./src/tests/tests.star")
 delayed_sync = import_module("./src/tests/delayed_sync.star")
 dashboard = import_module("./src/dashboard/dashboard.star")
+control_service = import_module("./src/control_service.star")
 
 DEFAULT_RIPPLED_COUNT = 4
 DEFAULT_GOXRPL_COUNT = 1
@@ -44,6 +45,7 @@ def run(plan, args = {}):
 
     # Upload dashboard files once (shared across all paths)
     dashboard_files = plan.upload_files(src = "./dashboard", name = "dashboard-files")
+    scenarios_files = plan.upload_files(src = "./scenarios", name = "control-scenarios")
 
     # Launch rippled nodes
     rippled_nodes = rippled.launch(plan, rippled_count, rippled_image, network_config)
@@ -52,6 +54,10 @@ def run(plan, args = {}):
     # then run the test which launches goXRPL internally.
     if test_suite == "delayed_sync":
         dashboard.launch(plan, rippled_nodes, [], dashboard_files)
+        # NOTE(M2.10): delayed_sync launches goXRPL internally after rippled advances,
+        # so goxrpl_nodes is [] here. The control service starts with rippled-only
+        # and will not pick up goXRPL nodes until live reconfig is added (M3+).
+        control_service.launch(plan, rippled_nodes, [], scenarios_files)
         plan.print("=== Running delayed sync test (goXRPL launches after rippled advances) ===")
         return delayed_sync.run(plan, rippled_nodes, goxrpl_image, network_config)
 
@@ -62,6 +68,7 @@ def run(plan, args = {}):
 
     # Launch monitoring dashboard with all nodes
     dashboard.launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files)
+    control_service.launch(plan, rippled_nodes, goxrpl_nodes, scenarios_files)
 
     # Run interop test suite
     all_nodes = rippled_nodes + goxrpl_nodes

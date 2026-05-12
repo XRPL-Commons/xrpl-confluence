@@ -1,0 +1,25 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: chaos-mixed-3x2
+topology:
+  rippled: { count: 3, image: rippleci/rippled:2.6.2 }
+  goxrpl:  { count: 2, image: goxrpl:latest }
+workload:
+  kind: fuzz
+  tx_rate: 5
+  accounts: 50
+  rotate_every: 1000
+  mutation_rate: 0.05
+chaos:
+  schedule:
+    - step: 50
+      recover_after: 25
+      type: restart
+      container: rippled-1
+observability:
+  enabled: true
+  alert_webhook_url: "https://example.invalid/hook"
+budget:
+  duration: 10m
+oracles: [state_diff]

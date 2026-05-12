@@ -14,3 +14,9 @@
 # Brainstorming sessions / worktrees
 .superpowers/
 .worktrees/
+
+# Locally-built confluence CLI binary
+bin/
+
+# Per-machine discovery file from `confluence up`
+.confluence/
