@@ -25,5 +25,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().Bool("json", false, "Emit machine-readable JSON on stdout")
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newScenarioCmd())
+	root.AddCommand(newUpCmd())
+	root.AddCommand(newDownCmd())
 	return root
 }
