@@ -47,16 +47,24 @@ func Validate(s *api.Scenario) []api.Error {
 	}
 
 	switch s.Workload.Kind {
-	case api.WorkloadSoak, api.WorkloadFuzz, api.WorkloadShrink, api.WorkloadNone:
-		// ok — no extra rules at M1
+	case api.WorkloadSoak, api.WorkloadNone:
+		// fully supported in M1
+	case api.WorkloadFuzz:
+		// fuzz-only (empty schedule) is not consumed by main.star yet; require chaos schedule.
+		if len(s.Chaos.Schedule) == 0 {
+			add("workload.kind", "workload.kind=fuzz requires chaos.schedule entries in M1", "either add chaos.schedule entries (becomes a chaos run) or pick a different workload")
+		}
+	case api.WorkloadShrink:
+		// Shrink uses fields not yet modelled (shrink_artifact, shrink_max_step). M2+.
+		add("workload.kind", "workload.kind=shrink is not yet supported by the M1 scenario schema", "use confluence shrink directly until M2 adds shrink_args")
 	case api.WorkloadReplay:
 		if s.Workload.Reproducer == nil || s.Workload.Reproducer.ID == "" {
 			add("workload.reproducer.id", "workload.kind=replay requires reproducer.id", "set workload.reproducer.id or change workload.kind")
 		}
 	case "":
-		add("workload.kind", "workload.kind is required", "one of: soak, fuzz, replay, shrink, none")
+		add("workload.kind", "workload.kind is required", "one of: soak, fuzz, replay, none")
 	default:
-		add("workload.kind", fmt.Sprintf("unknown workload.kind %q", s.Workload.Kind), "one of: soak, fuzz, replay, shrink, none")
+		add("workload.kind", fmt.Sprintf("unknown workload.kind %q", s.Workload.Kind), "one of: soak, fuzz, replay, none")
 	}
 
 	if s.Budget.Duration == "" {

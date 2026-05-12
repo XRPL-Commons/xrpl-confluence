@@ -42,6 +42,8 @@ func TestValidateRules(t *testing.T) {
 		{"no nodes", func(s *api.Scenario) { s.Topology.Rippled.Count = 0; s.Topology.Goxrpl.Count = 0 }, "scenario_invalid", "topology"},
 		{"negative count", func(s *api.Scenario) { s.Topology.Rippled.Count = -1 }, "scenario_invalid", "topology.rippled.count"},
 		{"bad workload kind", func(s *api.Scenario) { s.Workload.Kind = "explode" }, "scenario_invalid", "workload.kind"},
+		{"fuzz without schedule", func(s *api.Scenario) { s.Workload.Kind = api.WorkloadFuzz }, "scenario_invalid", "workload.kind"},
+		{"shrink not supported", func(s *api.Scenario) { s.Workload.Kind = api.WorkloadShrink }, "scenario_invalid", "workload.kind"},
 		{"replay missing reproducer", func(s *api.Scenario) { s.Workload.Kind = api.WorkloadReplay }, "scenario_invalid", "workload.reproducer.id"},
 		{"replay empty reproducer id", func(s *api.Scenario) { s.Workload.Kind = api.WorkloadReplay; s.Workload.Reproducer = &api.WorkloadReproducer{} }, "scenario_invalid", "workload.reproducer.id"},
 		{"missing budget duration", func(s *api.Scenario) { s.Budget.Duration = "" }, "scenario_invalid", "budget.duration"},

@@ -70,13 +70,32 @@ type Chaos struct {
 	Schedule []ChaosEvent `yaml:"schedule,omitempty" json:"schedule,omitempty"`
 }
 
-// ChaosEvent mirrors today's `.chaos-schedule.json` entry shape.
-// Fields are deliberately loose; the chaos runner validates internally.
+// ChaosEvent mirrors the wire format consumed by
+// sidecar/internal/fuzz/chaos/schedule_parse.go. Fields are typed mostly as
+// hints; the chaos runner does its own validation and dispatches on Type.
 type ChaosEvent struct {
-	At     string         `yaml:"at,omitempty" json:"at,omitempty"`
-	Kind   string         `yaml:"kind,omitempty" json:"kind,omitempty"`
-	Target string         `yaml:"target,omitempty" json:"target,omitempty"`
-	Params map[string]any `yaml:"params,omitempty" json:"params,omitempty"`
+	Step         int              `yaml:"step,omitempty" json:"step,omitempty"`
+	RecoverAfter int              `yaml:"recover_after,omitempty" json:"recover_after,omitempty"`
+	Type         string           `yaml:"type,omitempty" json:"type,omitempty"`
+	Container    string           `yaml:"container,omitempty" json:"container,omitempty"`
+	From         string           `yaml:"from,omitempty" json:"from,omitempty"`
+	To           string           `yaml:"to,omitempty" json:"to,omitempty"`
+	Iface        string           `yaml:"iface,omitempty" json:"iface,omitempty"`
+	DelayMs      int              `yaml:"delay_ms,omitempty" json:"delay_ms,omitempty"`
+	DelayMsMin   int              `yaml:"delay_ms_min,omitempty" json:"delay_ms_min,omitempty"`
+	DelayMsMax   int              `yaml:"delay_ms_max,omitempty" json:"delay_ms_max,omitempty"`
+	Feature      string           `yaml:"feature,omitempty" json:"feature,omitempty"`
+	Target       string           `yaml:"target,omitempty" json:"target,omitempty"`
+	Recurring    *RecurringChaos  `yaml:"recurring,omitempty" json:"recurring,omitempty"`
+}
+
+// RecurringChaos mirrors the recurring template shape parsed by schedule_parse.go.
+// The Event field is intentionally an interior ChaosEvent (recursive structure).
+type RecurringChaos struct {
+	Every     int         `yaml:"every,omitempty" json:"every,omitempty"`
+	UntilStep int         `yaml:"until_step,omitempty" json:"until_step,omitempty"`
+	Jitter    int         `yaml:"jitter,omitempty" json:"jitter,omitempty"`
+	Event     *ChaosEvent `yaml:"event,omitempty" json:"event,omitempty"`
 }
 
 type Observability struct {

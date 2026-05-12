@@ -13,7 +13,10 @@ workload:
   mutation_rate: 0.05
 chaos:
   schedule:
-    - { at: "30s", kind: latency, target: goxrpl-0, params: { delay_ms: 200 } }
+    - step: 50
+      recover_after: 25
+      type: restart
+      container: rippled-1
 observability:
   enabled: true
   alert_webhook_url: "https://example.invalid/hook"
