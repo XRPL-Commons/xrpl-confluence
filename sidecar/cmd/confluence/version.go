@@ -22,7 +22,10 @@ func newVersionCmd() *cobra.Command {
 				APIVersion string `json:"api_version"`
 			}{Version, api.Version}
 
-			asJSON, _ := cmd.Flags().GetBool("json")
+			asJSON, err := cmd.Flags().GetBool("json")
+			if err != nil {
+				return fmt.Errorf("version: --json flag: %w", err)
+			}
 			if asJSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(out)
 			}

@@ -7,14 +7,17 @@ import (
 )
 
 func TestVersionJSON(t *testing.T) {
-	out := &bytes.Buffer{}
+	out, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
 	root := newRootCmd()
 	root.SetOut(out)
-	root.SetErr(out)
+	root.SetErr(errBuf)
 	root.SetArgs([]string{"version", "--json"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
+	}
+	if errBuf.Len() != 0 {
+		t.Fatalf("unexpected stderr output: %q", errBuf.String())
 	}
 
 	var got struct {
