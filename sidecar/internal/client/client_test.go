@@ -387,6 +387,74 @@ func TestClient_Events(t *testing.T) {
 	}
 }
 
+func TestClient_StartRun(t *testing.T) {
+	c, teardown := testFixture(t)
+	defer teardown()
+
+	sc := &api.Scenario{
+		APIVersion: "confluence/v1",
+		Kind:       "Scenario",
+		Metadata:   api.ScenarioMetadata{Name: "client-run-test"},
+		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 1}},
+		Workload:   api.Workload{Kind: "soak"},
+		Budget:     api.Budget{Duration: "50ms"},
+	}
+
+	run, err := c.StartRun(context.Background(), sc)
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+	if run.ID == "" {
+		t.Fatal("run ID is empty")
+	}
+	if run.Status != "running" {
+		t.Errorf("expected status=running, got %q", run.Status)
+	}
+	if run.Scenario != "client-run-test" {
+		t.Errorf("expected scenario=client-run-test, got %q", run.Scenario)
+	}
+}
+
+func TestClient_GetRun(t *testing.T) {
+	c, teardown := testFixture(t)
+	defer teardown()
+
+	sc := &api.Scenario{
+		APIVersion: "confluence/v1",
+		Kind:       "Scenario",
+		Metadata:   api.ScenarioMetadata{Name: "client-get-run-test"},
+		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 1}},
+		Workload:   api.Workload{Kind: "soak"},
+		Budget:     api.Budget{Duration: "50ms"},
+	}
+
+	started, err := c.StartRun(context.Background(), sc)
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	got, err := c.GetRun(context.Background(), started.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.ID != started.ID {
+		t.Errorf("id mismatch: got %q, want %q", got.ID, started.ID)
+	}
+
+	// Non-existent ID must return *ErrAPI{Status:404}.
+	_, err = c.GetRun(context.Background(), "run_nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing run")
+	}
+	apiErr, ok := err.(*client.ErrAPI)
+	if !ok {
+		t.Fatalf("expected *client.ErrAPI, got %T: %v", err, err)
+	}
+	if apiErr.Status != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", apiErr.Status)
+	}
+}
+
 func TestClient_NetworkFailure(t *testing.T) {
 	// Listen on a random port and immediately close it so no server answers.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

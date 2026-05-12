@@ -56,33 +56,43 @@ func (d *upDeps) run(cmd *cobra.Command, _ []string) error {
 	tearDownFirst, _ := cmd.Flags().GetBool("tear-down-first")
 	waitControl, _ := cmd.Flags().GetDuration("wait-control")
 
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cur, err := d.boot(ctx, cmd, scenarioPath, enclaveName, packageDir, tearDownFirst, waitControl)
+	if err != nil {
+		return err
+	}
+	return emitUp(cmd, cur)
+}
+
+// boot loads, validates, and runs a scenario YAML through kurtosis, waits for
+// the control service, writes the discovery file, and returns the Current.
+func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, scenarioPath, enclaveName, packageDir string, tearDownFirst bool, waitControl time.Duration) (*discovery.Current, error) {
 	s, err := scenario.Load(scenarioPath)
 	if err != nil {
-		return outputValidation(cmd, false, []api.Error{{
+		return nil, outputValidation(cmd, false, []api.Error{{
 			Code:    api.ErrCodeScenarioUnreadable,
 			Message: err.Error(),
 		}})
 	}
 
 	if errs := scenario.Validate(s); len(errs) > 0 {
-		return outputValidation(cmd, false, errs)
+		return nil, outputValidation(cmd, false, errs)
 	}
 
 	argsJSON, err := scenario.Compile(s)
 	if err != nil {
-		return fmt.Errorf("scenario compile: %w", err)
+		return nil, fmt.Errorf("scenario compile: %w", err)
 	}
 
 	if enclaveName == "" {
 		enclaveName = s.Metadata.Name
 	}
 	if enclaveName == "" {
-		return fmt.Errorf("metadata.name or --enclave required")
-	}
-
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
+		return nil, fmt.Errorf("metadata.name or --enclave required")
 	}
 
 	_, err = kurtosis.Run(ctx, d.cli, kurtosis.RunOptions{
@@ -92,12 +102,12 @@ func (d *upDeps) run(cmd *cobra.Command, _ []string) error {
 		TearDownFirst: tearDownFirst,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	controlURL, err := d.waitForControl(ctx, enclaveName, waitControl)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	cur := &discovery.Current{
@@ -107,10 +117,9 @@ func (d *upDeps) run(cmd *cobra.Command, _ []string) error {
 		StartedAt:  time.Now().UTC(),
 	}
 	if err := discovery.Write(cur); err != nil {
-		return err
+		return nil, err
 	}
-
-	return emitUp(cmd, cur)
+	return cur, nil
 }
 
 func (d *upDeps) waitForControl(ctx context.Context, enclave string, timeout time.Duration) (string, error) {

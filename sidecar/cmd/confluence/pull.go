@@ -104,6 +104,7 @@ func runPullWith(cmd *cobra.Command, cli kurtosis.CLI, docker DockerExec) error 
 		if err != nil {
 			return fmt.Errorf("find confluence-control container: %w", err)
 		}
+
 		findingsDest := filepath.Join(dest, "findings")
 		if err := os.MkdirAll(findingsDest, 0o755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", findingsDest, err)
@@ -113,6 +114,17 @@ func runPullWith(cmd *cobra.Command, cli kurtosis.CLI, docker DockerExec) error 
 		}
 		count, _ := countFiles(findingsDest)
 		copied = append(copied, result{Kind: "findings", Count: count, Dest: findingsDest})
+
+		// Also mirror reproducers from the same container.
+		reproducersDest := filepath.Join(dest, "reproducers")
+		if err := os.MkdirAll(reproducersDest, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", reproducersDest, err)
+		}
+		if err := docker.CopyFromContainer(ctx, container, "/var/confluence/reproducers/.", reproducersDest); err != nil {
+			return err
+		}
+		rCount, _ := countFiles(reproducersDest)
+		copied = append(copied, result{Kind: "reproducers", Count: rCount, Dest: reproducersDest})
 	}
 
 	if doCorpus {

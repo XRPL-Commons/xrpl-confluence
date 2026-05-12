@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/discovery"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/kurtosis"
@@ -49,4 +50,10 @@ func jsonMode(cmd *cobra.Command) bool {
 // emitJSON writes payload as JSON to cmd.OutOrStdout.
 func emitJSON(cmd *cobra.Command, payload any) error {
 	return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+}
+
+// fileExists reports whether the given path exists and is a regular file.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }

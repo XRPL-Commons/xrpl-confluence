@@ -205,6 +205,44 @@ func (c *Client) Events(ctx context.Context) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+// StartRun calls POST /v1/runs to start a new run for the given scenario.
+func (c *Client) StartRun(ctx context.Context, scenario *api.Scenario) (server.Run, error) {
+	body, err := json.Marshal(map[string]any{"scenario": scenario})
+	if err != nil {
+		return server.Run{}, fmt.Errorf("marshal scenario: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/runs", bytes.NewReader(body))
+	if err != nil {
+		return server.Run{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return server.Run{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return server.Run{}, c.apiError(resp)
+	}
+
+	var out server.StartRunResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return server.Run{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out.Run, nil
+}
+
+// GetRun calls GET /v1/runs/{id} and returns the run record.
+func (c *Client) GetRun(ctx context.Context, id string) (server.Run, error) {
+	var out server.Run
+	err := c.getJSON(ctx, "/v1/runs/"+url.PathEscape(id), &out)
+	return out, err
+}
+
 // getJSON issues a GET, asserts 2xx, and JSON-decodes into v.
 func (c *Client) getJSON(ctx context.Context, path string, v any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)

@@ -39,12 +39,28 @@ func (d *downDeps) run(cmd *cobra.Command, args []string) error {
 		enclaveName = args[0]
 	}
 
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	resolved, err := d.tearDown(ctx, enclaveName)
+	if err != nil {
+		return err
+	}
+	return emitDown(cmd, resolved)
+}
+
+// tearDown removes the given enclave (or the current discovery enclave if
+// enclaveName is empty) and cleans up the discovery file.
+// It returns the resolved enclave name.
+func (d *downDeps) tearDown(ctx context.Context, enclaveName string) (string, error) {
 	var cur *discovery.Current
 	if enclaveName == "" {
 		var err error
 		cur, err = discovery.Read()
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
+			return "", err
 		}
 		if cur != nil {
 			enclaveName = cur.EnclaveID
@@ -52,16 +68,11 @@ func (d *downDeps) run(cmd *cobra.Command, args []string) error {
 	}
 
 	if enclaveName == "" {
-		return fmt.Errorf("no current enclave (run 'confluence up' first)")
-	}
-
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
+		return "", fmt.Errorf("no current enclave (run 'confluence up' first)")
 	}
 
 	if err := kurtosis.RemoveEnclave(ctx, d.cli, enclaveName); err != nil {
-		return err
+		return "", err
 	}
 
 	if cur == nil {
@@ -73,11 +84,10 @@ func (d *downDeps) run(cmd *cobra.Command, args []string) error {
 	}
 	if cur != nil {
 		if err := discovery.Remove(); err != nil {
-			return err
+			return "", err
 		}
 	}
-
-	return emitDown(cmd, enclaveName)
+	return enclaveName, nil
 }
 
 func emitDown(cmd *cobra.Command, enclaveName string) error {

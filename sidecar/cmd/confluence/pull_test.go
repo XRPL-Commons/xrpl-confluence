@@ -105,19 +105,24 @@ func TestPull_Findings_HappyPath(t *testing.T) {
 		t.Fatalf("runPullWith: %v", err)
 	}
 
-	// Assert docker cp was called with the right args.
-	if len(docker.copyCalls) != 1 {
-		t.Fatalf("expected 1 copy call, got %d", len(docker.copyCalls))
+	// Assert docker cp was called with the right args: findings + reproducers.
+	if len(docker.copyCalls) != 2 {
+		t.Fatalf("expected 2 copy calls (findings + reproducers), got %d", len(docker.copyCalls))
 	}
-	call := docker.copyCalls[0]
-	if !strings.HasPrefix(call.Container, "confluence-control--uuid-ctrl-1") {
-		t.Errorf("unexpected container: %q", call.Container)
+	var findingsCall cpCall
+	for _, call := range docker.copyCalls {
+		if call.Src == "/var/confluence/findings/." {
+			findingsCall = call
+		}
 	}
-	if call.Src != "/var/confluence/findings/." {
-		t.Errorf("unexpected src: %q", call.Src)
+	if !strings.HasPrefix(findingsCall.Container, "confluence-control--uuid-ctrl-1") {
+		t.Errorf("unexpected container: %q", findingsCall.Container)
 	}
-	if !strings.HasSuffix(call.Dest, "findings") {
-		t.Errorf("unexpected dest: %q", call.Dest)
+	if findingsCall.Src != "/var/confluence/findings/." {
+		t.Errorf("unexpected src: %q", findingsCall.Src)
+	}
+	if !strings.HasSuffix(findingsCall.Dest, "findings") {
+		t.Errorf("unexpected dest: %q", findingsCall.Dest)
 	}
 
 	// Output contains "Pulled findings".
@@ -207,8 +212,8 @@ func TestPull_JSON_Output(t *testing.T) {
 		t.Errorf("enclave_id: got %v", got["enclave_id"])
 	}
 	copied, ok := got["copied"].([]any)
-	if !ok || len(copied) != 1 {
-		t.Errorf("copied: expected 1 entry, got %v", got["copied"])
+	if !ok || len(copied) != 2 {
+		t.Errorf("copied: expected 2 entries (findings + reproducers), got %v", got["copied"])
 	}
 }
 
