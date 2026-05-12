@@ -18,6 +18,7 @@ type Server struct {
 	budgetDeadline time.Time
 	nodePoller     *NodePoller
 	findingStore   *finding.Store
+	logsDir        string
 	mux            *http.ServeMux
 }
 
@@ -37,6 +38,7 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /v1/state/diff", s.stateDiff)
 	s.mux.HandleFunc("GET /v1/findings", s.findingsList)
 	s.mux.HandleFunc("GET /v1/findings/{id}", s.findingsByID)
+	s.mux.HandleFunc("GET /v1/logs", s.logs)
 	return s
 }
 
@@ -69,4 +71,9 @@ func WithNodePoller(p *NodePoller) Option {
 // WithFindingStore attaches a finding.Store for the /v1/findings endpoints.
 func WithFindingStore(fs *finding.Store) Option {
 	return func(s *Server) { s.findingStore = fs }
+}
+
+// WithLogsDir sets the directory from which per-node log files are read.
+func WithLogsDir(dir string) Option {
+	return func(s *Server) { s.logsDir = dir }
 }

@@ -22,6 +22,7 @@ func main() {
 	nodesConfig := flag.String("nodes-config", "", "path to JSON file with node list")
 	pollInterval := flag.Duration("poll-interval", 5*time.Second, "node poll interval")
 	findingsDir := flag.String("findings-dir", "/var/confluence/findings", "directory watched for new findings")
+	logsDir := flag.String("logs-dir", "/var/confluence/logs", "directory containing per-node log files")
 	flag.Parse()
 
 	if err := os.MkdirAll(*findingsDir, 0o755); err != nil {
@@ -35,7 +36,7 @@ func main() {
 	watcher := finding.NewDiskWatcher(*findingsDir, findingStore, 1*time.Second)
 	watcher.Start(ctx)
 
-	opts := []server.Option{server.WithFindingStore(findingStore)}
+	opts := []server.Option{server.WithFindingStore(findingStore), server.WithLogsDir(*logsDir)}
 	if *scenario != "" {
 		opts = append(opts, server.WithScenario(*scenario))
 	}
