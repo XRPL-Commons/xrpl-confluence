@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/finding"
 )
 
 // Option configures a Server.
@@ -15,6 +17,7 @@ type Server struct {
 	scenario       string
 	budgetDeadline time.Time
 	nodePoller     *NodePoller
+	findingStore   *finding.Store
 	mux            *http.ServeMux
 }
 
@@ -31,6 +34,8 @@ func New(opts ...Option) *Server {
 	if s.nodePoller != nil {
 		s.mux.HandleFunc("/v1/nodes", s.nodes)
 	}
+	s.mux.HandleFunc("GET /v1/findings", s.findingsList)
+	s.mux.HandleFunc("GET /v1/findings/{id}", s.findingsByID)
 	return s
 }
 
@@ -58,4 +63,9 @@ func WithBudget(deadline time.Time) Option {
 // WithNodePoller attaches a NodePoller and registers GET /v1/nodes.
 func WithNodePoller(p *NodePoller) Option {
 	return func(s *Server) { s.nodePoller = p }
+}
+
+// WithFindingStore attaches a finding.Store for the /v1/findings endpoints.
+func WithFindingStore(fs *finding.Store) Option {
+	return func(s *Server) { s.findingStore = fs }
 }

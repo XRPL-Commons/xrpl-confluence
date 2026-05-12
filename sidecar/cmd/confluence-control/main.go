@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/finding"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/server"
 )
 
@@ -20,18 +21,27 @@ func main() {
 	budgetDuration := flag.Duration("budget-duration", 0, "run budget duration; 0 = unbounded")
 	nodesConfig := flag.String("nodes-config", "", "path to JSON file with node list")
 	pollInterval := flag.Duration("poll-interval", 5*time.Second, "node poll interval")
+	findingsDir := flag.String("findings-dir", "/var/confluence/findings", "directory watched for new findings")
 	flag.Parse()
 
-	opts := []server.Option{}
+	if err := os.MkdirAll(*findingsDir, 0o755); err != nil {
+		log.Fatalf("findings-dir: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	findingStore := finding.NewStore()
+	watcher := finding.NewDiskWatcher(*findingsDir, findingStore, 1*time.Second)
+	watcher.Start(ctx)
+
+	opts := []server.Option{server.WithFindingStore(findingStore)}
 	if *scenario != "" {
 		opts = append(opts, server.WithScenario(*scenario))
 	}
 	if *budgetDuration > 0 {
 		opts = append(opts, server.WithBudget(time.Now().Add(*budgetDuration)))
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	if *nodesConfig != "" {
 		data, err := os.ReadFile(*nodesConfig)
