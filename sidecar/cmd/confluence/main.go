@@ -34,5 +34,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newFindingsCmd())
 	root.AddCommand(newFindingCmd())
 	root.AddCommand(newLogsCmd())
+	root.AddCommand(newPullCmd())
+	root.AddCommand(newEventsCmd())
 	return root
 }
