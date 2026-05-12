@@ -20,6 +20,7 @@ type Server struct {
 	findingStore   *finding.Store
 	eventBus       *EventBus
 	logsDir        string
+	scenariosDir   string
 	mux            *http.ServeMux
 }
 
@@ -41,6 +42,8 @@ func New(opts ...Option) *Server {
 	s.mux.HandleFunc("GET /v1/findings/{id}", s.findingsByID)
 	s.mux.HandleFunc("GET /v1/logs", s.logs)
 	s.mux.HandleFunc("GET /v1/events", s.events)
+	s.mux.HandleFunc("GET /v1/scenarios", s.scenariosList)
+	s.mux.HandleFunc("POST /v1/scenarios/validate", s.scenariosValidate)
 	return s
 }
 
@@ -83,4 +86,9 @@ func WithLogsDir(dir string) Option {
 // WithEventBus attaches an EventBus used by the GET /v1/events SSE endpoint.
 func WithEventBus(b *EventBus) Option {
 	return func(s *Server) { s.eventBus = b }
+}
+
+// WithScenariosDir sets the directory scanned for built-in *.yaml scenario files.
+func WithScenariosDir(dir string) Option {
+	return func(s *Server) { s.scenariosDir = dir }
 }

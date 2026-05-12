@@ -2,11 +2,13 @@ package api
 
 // Error codes (closed set). Add new codes here when new endpoints introduce them.
 const (
-	ErrCodeScenarioInvalid    = "scenario_invalid"
-	ErrCodeScenarioUnreadable = "scenario_unreadable"
-	ErrCodeFindingNotFound    = "finding_not_found"
-	ErrCodeLogsNotFound       = "logs_not_found"
-	ErrCodeBadRequest         = "bad_request"
+	ErrCodeScenarioInvalid      = "scenario_invalid"
+	ErrCodeScenarioUnreadable   = "scenario_unreadable"
+	ErrCodeFindingNotFound      = "finding_not_found"
+	ErrCodeLogsNotFound         = "logs_not_found"
+	ErrCodeBadRequest           = "bad_request"
+	ErrCodeMethodNotAllowed     = "method_not_allowed"
+	ErrCodeUnsupportedMediaType = "unsupported_media_type"
 )
 
 // Error is a single, machine-readable error returned by the API or CLI.
