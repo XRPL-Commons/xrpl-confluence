@@ -1,0 +1,1 @@
+{"test_suite":"chaos","goxrpl_count":2,"rippled_count":3,"rippled_image":"rippleci/rippled:2.6.2","goxrpl_image":"goxrpl:latest","chaos_args":{"schedule":[{"at":"30s","kind":"latency","target":"goxrpl-0","params":{"delay_ms":200}}],"tx_rate":5,"accounts":50,"rotate_every":1000,"mutation_rate":0.05,"enable_observability":true,"alert_webhook_url":"https://example.invalid/hook"}}

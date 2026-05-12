@@ -1,0 +1,1 @@
+{"test_suite":"soak","goxrpl_count":2,"rippled_count":3,"rippled_image":"rippleci/rippled:2.6.2","goxrpl_image":"goxrpl:latest","soak_args":{"tx_rate":5,"accounts":50,"rotate_every":1000,"mutation_rate":0.05,"enable_observability":false,"alert_webhook_url":""}}
