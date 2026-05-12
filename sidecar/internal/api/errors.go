@@ -5,6 +5,7 @@ const (
 	ErrCodeScenarioInvalid    = "scenario_invalid"
 	ErrCodeScenarioUnreadable = "scenario_unreadable"
 	ErrCodeFindingNotFound    = "finding_not_found"
+	ErrCodeBadRequest         = "bad_request"
 )
 
 // Error is a single, machine-readable error returned by the API or CLI.

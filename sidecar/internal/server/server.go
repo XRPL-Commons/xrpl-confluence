@@ -34,6 +34,7 @@ func New(opts ...Option) *Server {
 	if s.nodePoller != nil {
 		s.mux.HandleFunc("/v1/nodes", s.nodes)
 	}
+	s.mux.HandleFunc("GET /v1/state/diff", s.stateDiff)
 	s.mux.HandleFunc("GET /v1/findings", s.findingsList)
 	s.mux.HandleFunc("GET /v1/findings/{id}", s.findingsByID)
 	return s
