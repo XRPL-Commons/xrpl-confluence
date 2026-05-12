@@ -57,6 +57,9 @@ func main() {
 		poller := server.NewNodePoller(file.Nodes, *pollInterval)
 		poller.Start(ctx)
 		opts = append(opts, server.WithNodePoller(poller))
+
+		oracle := finding.NewDivergenceOracle(poller, findingStore, 2*time.Second)
+		oracle.Start(ctx)
 	}
 
 	srv := &http.Server{

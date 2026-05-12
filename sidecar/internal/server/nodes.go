@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/finding"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
 )
 
@@ -104,6 +105,24 @@ func (p *NodePoller) Snapshot() NodesResponse {
 		Timestamp: time.Now().UnixMilli(),
 		Nodes:     nodes,
 	}
+}
+
+// DivergenceSnapshot satisfies finding.Snapshotter. It returns one entry per
+// node that has a non-empty validated ledger.
+func (p *NodePoller) DivergenceSnapshot() []finding.DivergenceInput {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]finding.DivergenceInput, 0, len(p.nodes))
+	for _, n := range p.nodes {
+		if n.ValidatedLedger != nil && n.ValidatedLedger.Hash != "" && n.ValidatedLedger.Seq > 0 {
+			out = append(out, finding.DivergenceInput{
+				Node: n.Name,
+				Seq:  n.ValidatedLedger.Seq,
+				Hash: n.ValidatedLedger.Hash,
+			})
+		}
+	}
+	return out
 }
 
 func (p *NodePoller) pollLoop(ctx context.Context, cfg NodeConfig) {
