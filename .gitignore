@@ -1,4 +1,22 @@
-# Locally-built CLI
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Kurtosis
+.kurtosis/
+.claude/
+
+# Brainstorming sessions / worktrees
+.superpowers/
+.worktrees/
+
+# Locally-built confluence CLI binary
 bin/
-# Discovery file from confluence up (per-machine state)
+
+# Per-machine discovery file from `confluence up`
 .confluence/
