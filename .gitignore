@@ -1,16 +1,4 @@
-# OS
-.DS_Store
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Kurtosis
-.kurtosis/
-.claude/
-
-# Brainstorming sessions / worktrees
-.superpowers/
-.worktrees/
+# Locally-built CLI
+bin/
+# Discovery file from confluence up (per-machine state)
+.confluence/

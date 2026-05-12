@@ -13,7 +13,8 @@ type ServiceInfo struct {
 	Name      string
 	UUID      string
 	IPAddress string
-	Ports     map[string]int // application port name -> host-side port
+	Ports     map[string]int    // application port name -> host-side port
+	PortURLs  map[string]string // application port name -> host-side URL (e.g. http://127.0.0.1:59061)
 }
 
 // EnclaveInfo holds the list of services running in an enclave.
@@ -30,18 +31,39 @@ func InspectService(ctx context.Context, cli CLI, enclave, service string) (*Ser
 		return nil, fmt.Errorf("kurtosis service inspect: %w\n%s", err, stderr.String())
 	}
 
-	info := &ServiceInfo{Name: service}
+	info := &ServiceInfo{Name: service, PortURLs: map[string]string{}}
 	scanner := bufio.NewScanner(&stdout)
+	inPorts := false
 	for scanner.Scan() {
 		line := scanner.Text()
 		if k, v, ok := cutField(line, "UUID:"); ok && k == "UUID" {
 			info.UUID = v
-		} else if k, v, ok := cutField(line, "IP Address:"); ok && k == "IP Address" {
+			continue
+		}
+		if k, v, ok := cutField(line, "IP Address:"); ok && k == "IP Address" {
 			info.IPAddress = v
+			continue
+		}
+		if strings.TrimSpace(line) == "Ports:" {
+			inPorts = true
+			continue
+		}
+		// Stop scanning Ports section at next top-level key.
+		if inPorts && len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
+			inPorts = false
+		}
+		if inPorts {
+			// Line shape: "  http: 8090/tcp -> http://127.0.0.1:59061"
+			trimmed := strings.TrimSpace(line)
+			if name, rest, ok := strings.Cut(trimmed, ":"); ok {
+				if _, hostURL, ok := strings.Cut(rest, "->"); ok {
+					info.PortURLs[strings.TrimSpace(name)] = strings.TrimSpace(hostURL)
+				}
+			}
 		}
 	}
-	if info.UUID == "" && info.IPAddress == "" {
-		return nil, fmt.Errorf("kurtosis service inspect %s/%s: UUID and IP Address not found in output", enclave, service)
+	if info.UUID == "" && info.IPAddress == "" && len(info.PortURLs) == 0 {
+		return nil, fmt.Errorf("kurtosis service inspect %s/%s: no UUID, IP Address, or Ports found in output", enclave, service)
 	}
 	return info, nil
 }

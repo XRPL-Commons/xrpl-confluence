@@ -126,9 +126,14 @@ func (d *upDeps) waitForControl(ctx context.Context, enclave string, timeout tim
 	deadline := time.Now().Add(timeout)
 	for {
 		svc, err := kurtosis.InspectService(ctx, d.cli, enclave, "confluence-control")
-		if err == nil && svc.IPAddress != "" {
-			controlURL := fmt.Sprintf("http://%s:%d", svc.IPAddress, 8090)
-			if d.probeHealthz(ctx, controlURL, deadline) {
+		if err == nil {
+			// Prefer the host-mapped URL (current kurtosis output);
+			// fall back to enclave-internal IP for older kurtosis versions.
+			controlURL := svc.PortURLs["http"]
+			if controlURL == "" && svc.IPAddress != "" {
+				controlURL = fmt.Sprintf("http://%s:%d", svc.IPAddress, 8090)
+			}
+			if controlURL != "" && d.probeHealthz(ctx, controlURL, deadline) {
 				return controlURL, nil
 			}
 		}

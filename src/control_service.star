@@ -4,7 +4,7 @@ CONTROL_PORT = 8090
 RPC_PORT = 5005
 
 
-def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-confluence-sidecar:latest"):
+def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-confluence-sidecar:m2dogfood"):
     """Launch the confluence-control service.
 
     Args:
@@ -44,8 +44,10 @@ def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-
         name = "confluence-control",
         config = ServiceConfig(
             image = image,
+            # Override the image ENTRYPOINT (which is /fuzz). Kurtosis's `cmd`
+            # is appended to ENTRYPOINT in Docker; `entrypoint` replaces it.
+            entrypoint = ["/confluence-control"],
             cmd = [
-                "/confluence-control",
                 "--listen", ":{}".format(CONTROL_PORT),
                 "--nodes-config", "/app/config/nodes.json",
                 "--scenarios-dir", "/app/scenarios",
