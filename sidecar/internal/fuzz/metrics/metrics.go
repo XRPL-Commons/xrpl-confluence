@@ -16,6 +16,7 @@ type Registry struct {
 
 	TxsSubmitted   *prometheus.CounterVec   // labels: tx_type, mode (valid|mutated|random)
 	TxsApplied     *prometheus.CounterVec   // labels: tx_type, result (e.g. tesSUCCESS)
+	TxsFailed      *prometheus.CounterVec   // labels: tx_type, result (e.g. tecXXX, temXXX, rpc_error)
 	Divergences    *prometheus.CounterVec   // labels: layer (state_hash|tx_result|metadata|invariant|crash)
 	Crashes        *prometheus.CounterVec   // labels: node, impl
 	AccountsActive   prometheus.Gauge
@@ -36,6 +37,13 @@ func New() *Registry {
 	)
 	r.TxsApplied = prometheus.NewCounterVec(
 		prometheus.CounterOpts{Name: "fuzz_txs_applied_total"},
+		[]string{"tx_type", "result"},
+	)
+	r.TxsFailed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "fuzz_txs_failed_total",
+			Help: "Submissions that did not reach tesSUCCESS/terQUEUED, labelled by engine code (tec*/tem*/tef*/temBAD*/...) or rpc_error.",
+		},
 		[]string{"tx_type", "result"},
 	)
 	r.Divergences = prometheus.NewCounterVec(
@@ -62,7 +70,7 @@ func New() *Registry {
 	)
 
 	for _, c := range []prometheus.Collector{
-		r.TxsSubmitted, r.TxsApplied, r.Divergences, r.Crashes,
+		r.TxsSubmitted, r.TxsApplied, r.TxsFailed, r.Divergences, r.Crashes,
 		r.AccountsActive, r.CorpusSize, r.UniqueSignatures, r.CurrentSeed,
 		r.OracleLatency, r.CloseDuration,
 	} {

@@ -179,6 +179,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	}
 	lastCompared := info.ValidatedLedger.Seq
 
+	var failLogSeq int64
 	for i := 0; i < cfg.TxCount; i++ {
 		if err := ctx.Err(); err != nil {
 			break
@@ -207,11 +208,8 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		res, err := submitTx(submit, tx, cfg.LocalSign)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
-			if err != nil {
-				log.Printf("realtime: submit %s: %v", tx.TransactionType(), err)
-			} else {
-				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType(), res.EngineResult, res.EngineResultMessage)
-			}
+			recordFailure(cfg.Metrics, txLog, 20, &failLogSeq, i,
+				tx.TransactionType(), tx.Fields, tx.Secret, res, err)
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)

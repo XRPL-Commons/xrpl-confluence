@@ -130,6 +130,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		defer ticker.Stop()
 	}
 
+	var failLogSeq int64
 	step := 0
 	for {
 		if err := ctx.Err(); err != nil {
@@ -168,7 +169,8 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 			blob, signErr := submit.SignLocal(tx.Secret, tx.Fields)
 			if signErr != nil {
 				atomic.AddInt64(&stats.TxsFailed, 1)
-				log.Printf("soak: sign %s: %v", tx.TransactionType(), signErr)
+				recordFailure(cfg.Metrics, txLog, 50, &failLogSeq, step,
+					tx.TransactionType(), tx.Fields, tx.Secret, nil, signErr)
 				continue
 			}
 			res, err = submit.SubmitTxBlob(blob)
@@ -177,6 +179,8 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		}
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
+			recordFailure(cfg.Metrics, txLog, 50, &failLogSeq, step,
+				tx.TransactionType(), tx.Fields, tx.Secret, res, err)
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)
