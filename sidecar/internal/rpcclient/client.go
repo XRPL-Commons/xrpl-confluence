@@ -195,7 +195,7 @@ type SubmitResult struct {
 // reject transactions when the network load_factor temporarily elevates the
 // reference fee above the default 10× cushion. 1000× (= 10 000 drops at a 10-
 // drop base fee) is deliberately generous for a test network.
-const feeMultMax = 1000
+const feeMultMax = 10000
 
 // SubmitPayment submits a signed Payment using sign-and-submit.
 func (c *Client) SubmitPayment(secret, account, destination, amount string) (*SubmitResult, error) {

@@ -128,6 +128,10 @@ func retrySubmit(maxRetries int, fn func() (*rpcclient.SubmitResult, error)) err
 		if res.EngineResult == "tesSUCCESS" || res.EngineResult == "terQUEUED" {
 			return nil
 		}
+		if strings.HasPrefix(res.EngineResult, "tel") || strings.HasPrefix(res.EngineResult, "ter") {
+			lastErr = fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
+			continue
+		}
 		return fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
 	}
 	return fmt.Errorf("transient error after %d retries: %w", maxRetries, lastErr)
@@ -142,7 +146,8 @@ func isTransientRPCError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "noCurrent") ||
 		strings.Contains(msg, "notReady") ||
-		strings.Contains(msg, "tooBusy")
+		strings.Contains(msg, "tooBusy") ||
+		strings.Contains(msg, "highFee")
 }
 
 // waitForValidation polls ServerInfo until validated_ledger.seq has advanced
