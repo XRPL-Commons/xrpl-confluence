@@ -68,12 +68,14 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
+			recordSetupFailure(rec, nil, nil, "replay", "fund", err)
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
 	}
 	if !cfg.SkipSetup {
 		if err := accounts.SetupState(submit, pool); err != nil {
+			recordSetupFailure(rec, nil, nil, "replay", "setup_state", err)
 			return nil, fmt.Errorf("setup state: %w", err)
 		}
 	}

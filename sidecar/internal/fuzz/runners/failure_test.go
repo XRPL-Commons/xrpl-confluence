@@ -3,6 +3,7 @@ package runners
 import (
 	"errors"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -95,6 +96,61 @@ func TestRecordFailure_AccumulatesAcrossCalls(t *testing.T) {
 	body := scrapeMetrics(t, m)
 	if !strings.Contains(body, `fuzz_txs_failed_total{result="notReady",tx_type="Payment"} 20`) {
 		t.Fatalf("expected 20 notReady failures; body:\n%s", body)
+	}
+}
+
+func TestRecordSetupFailure_WritesDivergenceAndIncrementsMetric(t *testing.T) {
+	dir := t.TempDir()
+	rec := corpus.NewRecorder(dir, 0xbeef)
+	m := metrics.New()
+
+	recordSetupFailure(rec, m, nil, "soak", "setup_state",
+		errors.New("trustset rA→rB: engine=tecNO_LINE (no line)"))
+
+	body := scrapeMetrics(t, m)
+	if !strings.Contains(body, `fuzz_divergences_total{layer="setup_failure"} 1`) {
+		t.Fatalf("fuzz_divergences_total not incremented; body:\n%s", body)
+	}
+
+	files, err := os.ReadDir(filepath.Join(dir, "divergences"))
+	if err != nil {
+		t.Fatalf("read divergences dir: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 divergence file, got %d", len(files))
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "divergences", files[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"kind": "setup_failure"`) {
+		t.Fatalf("divergence file missing kind: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"phase": "setup_state"`) {
+		t.Fatalf("divergence file missing phase: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"mode": "soak"`) {
+		t.Fatalf("divergence file missing mode: %s", raw)
+	}
+}
+
+func TestRecordSetupFailure_TolerantOfNilArgs(t *testing.T) {
+	recordSetupFailure(nil, nil, nil, "soak", "fund", errors.New("boom"))
+}
+
+func TestRecordSetupFailure_IgnoresNilError(t *testing.T) {
+	dir := t.TempDir()
+	rec := corpus.NewRecorder(dir, 0xbeef)
+	m := metrics.New()
+	recordSetupFailure(rec, m, nil, "soak", "setup_state", nil)
+
+	if _, err := os.ReadDir(filepath.Join(dir, "divergences")); err == nil {
+		t.Fatal("recordSetupFailure(nil err) must not write divergence files")
+	}
+	body := scrapeMetrics(t, m)
+	if strings.Contains(body, "setup_failure") {
+		t.Fatalf("divergence counter must not increment on nil err; body:\n%s", body)
 	}
 }
 

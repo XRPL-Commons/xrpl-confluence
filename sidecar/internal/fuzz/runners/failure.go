@@ -1,9 +1,11 @@
 package runners
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/alert"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/corpus"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/metrics"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/rpcclient"
@@ -79,5 +81,47 @@ func recordFailure(
 				log.Printf("submit %s failed: %s", txType, code)
 			}
 		}
+	}
+}
+
+// recordSetupFailure persists a setup-phase abort as a divergence finding
+// and fires the alerter, so downstream tooling parsing /output/corpus
+// sees "fuzzer aborted at setup" rather than an empty corpus.
+//
+// `phase` should identify the failing step ("fund", "setup_state",
+// "discover_amendments", ...). `runMode` propagates through to the
+// finding so soak / realtime / replay / shrink share one corpus schema.
+func recordSetupFailure(
+	rec *corpus.Recorder,
+	m *metrics.Registry,
+	alerter *alert.Webhook,
+	runMode string,
+	phase string,
+	err error,
+) {
+	if err == nil {
+		return
+	}
+	desc := fmt.Sprintf("setup aborted in %s: %v", phase, err)
+	log.Printf("%s: %s", runMode, desc)
+
+	d := &corpus.Divergence{
+		Kind:        "setup_failure",
+		Description: desc,
+		Details: map[string]any{
+			"mode":  runMode,
+			"phase": phase,
+			"error": err.Error(),
+		},
+	}
+	if rec != nil {
+		_, _ = rec.RecordDivergence(d)
+	}
+	if m != nil {
+		m.Divergences.WithLabelValues("setup_failure").Inc()
+	}
+	if alerter != nil {
+		alerter.Maybe(corpus.Signature(d).Key(),
+			fmt.Sprintf("[setup_failure] %s: %s", runMode, desc))
 	}
 }

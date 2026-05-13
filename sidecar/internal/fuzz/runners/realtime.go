@@ -153,6 +153,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "fund", err)
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
@@ -160,6 +161,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	if !cfg.SkipSetup {
 		log.Printf("realtime: seeding state mesh (%d accounts) ...", cfg.AccountN)
 		if err := accounts.SetupState(submit, pool); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "setup_state", err)
 			return nil, fmt.Errorf("setup state: %w", err)
 		}
 		log.Printf("realtime: state mesh seeded")
@@ -167,6 +169,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 
 	enabled, err := generator.DiscoverEnabledAmendments(submit)
 	if err != nil {
+		recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "discover_amendments", err)
 		return nil, fmt.Errorf("amendments: %w", err)
 	}
 	log.Printf("realtime: %d amendments enabled", len(enabled))

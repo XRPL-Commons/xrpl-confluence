@@ -61,6 +61,7 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "soak", "fund", err)
 			return nil, fmt.Errorf("fund: %w", err)
 		}
 		time.Sleep(5 * time.Second)
@@ -69,10 +70,12 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 	var enabled []string
 	if !cfg.SkipSetup {
 		if err := accounts.SetupState(submit, pool); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "soak", "setup_state", err)
 			return nil, fmt.Errorf("setup state: %w", err)
 		}
 		enabled, err = generator.DiscoverEnabledAmendments(submit)
 		if err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "soak", "discover_amendments", err)
 			return nil, err
 		}
 	}
