@@ -38,6 +38,14 @@ def run(plan, args = {}):
     test_suite = args.get("test_suite", "all")
     shrink_args = args.get("shrink_args")
 
+    # Pre-flight validation: catch impossible topologies before spending
+    # minutes spinning up containers + waiting on consensus. Without this,
+    # a bad arg combination (e.g. soak with goxrpl_count=0) gets caught
+    # mid-run by a fail() inside a test suite — at which point Kurtosis
+    # has already produced a partially-built enclave and the error reaches
+    # the user *after* the network came up.
+    _validate_topology(rippled_count, goxrpl_count, test_suite)
+
     plan.print("Starting xrpl-confluence with {} rippled + {} goXRPL nodes".format(rippled_count, goxrpl_count))
 
     # Generate shared network config (validator keys, peer list, genesis ledger)
@@ -75,3 +83,39 @@ def run(plan, args = {}):
     test_results = tests.run(plan, all_nodes, test_suite, goxrpl_image, network_config, shrink_args, args)
 
     return test_results
+
+
+# Per-suite minimum-counts table. Each entry maps a suite name to
+# (min_rippled, min_goxrpl). Anything not listed has no minimum.
+#
+# Soak / chaos drive goXRPL hard against multiple rippled validators, so
+# both require >= 2 rippled and >= 1 goxrpl. Shrink replays a saved run
+# log against the network and has the same minimums for the same reason.
+# fuzz / replay are bounded but still need a peer for the oracle to compare
+# against, hence >= 2 rippled.
+_SUITE_MIN_COUNTS = {
+    "soak":   (2, 1),
+    "chaos":  (2, 1),
+    "shrink": (2, 1),
+    "fuzz":   (2, 0),
+    "replay": (2, 0),
+}
+
+
+def _validate_topology(rippled_count, goxrpl_count, test_suite):
+    if rippled_count < 0 or goxrpl_count < 0:
+        fail("rippled_count and goxrpl_count must be >= 0 (got {} / {})".format(
+            rippled_count, goxrpl_count,
+        ))
+    if rippled_count + goxrpl_count < 2:
+        fail("xrpl-confluence needs >= 2 total nodes for oracle comparison (got {} rippled + {} goxrpl)".format(
+            rippled_count, goxrpl_count,
+        ))
+    mins = _SUITE_MIN_COUNTS.get(test_suite)
+    if mins == None:
+        return
+    min_rippled, min_goxrpl = mins
+    if rippled_count < min_rippled or goxrpl_count < min_goxrpl:
+        fail("test_suite=\"{}\" requires >= {} rippled and >= {} goxrpl (got {} rippled, {} goxrpl)".format(
+            test_suite, min_rippled, min_goxrpl, rippled_count, goxrpl_count,
+        ))
