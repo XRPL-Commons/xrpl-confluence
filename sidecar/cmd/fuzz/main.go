@@ -81,7 +81,25 @@ func main() {
 	var statsMu sync.RWMutex
 	var currentStats *runners.Stats
 	var currentShrink *runners.ShrinkResult
-	go serveHTTP(mreg, &statsMu, &currentStats, &currentShrink)
+	var runComplete bool
+	var runError string
+	var runPhase string
+	go serveHTTP(mreg, &statsMu, &currentStats, &currentShrink, &runComplete, &runError, &runPhase)
+
+	// reportFatal records an error to the /status endpoint and blocks main
+	// indefinitely so the HTTP server stays up for operators to inspect.
+	// Use this instead of log.Fatalf in long-running modes (soak, chaos,
+	// fuzz, replay) — a crashed sidecar leaves kurtosis polling a dead port
+	// and operators with no diagnostic surface.
+	reportFatal := func(phase, msg string) {
+		statsMu.Lock()
+		runError = msg
+		runPhase = phase
+		runComplete = true
+		statsMu.Unlock()
+		log.Printf("FATAL phase=%s: %s", phase, msg)
+		select {}
+	}
 
 	ctx := context.Background()
 
@@ -89,7 +107,7 @@ func main() {
 	case "fuzz":
 		cfg, err := loadConfig()
 		if err != nil {
-			log.Fatalf("config: %v", err)
+			reportFatal("config", err.Error())
 		}
 		mreg.CurrentSeed.Set(float64(cfg.Seed))
 		mreg.AccountsActive.Set(float64(cfg.AccountN))
@@ -109,10 +127,11 @@ func main() {
 		}, cfg.CorpusDir)
 		stats, err := runners.Run(ctx, *cfg)
 		if err != nil {
-			log.Fatalf("run: %v", err)
+			reportFatal("run", err.Error())
 		}
 		statsMu.Lock()
 		currentStats = stats
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("fuzz: done\n%s", blob)
@@ -120,7 +139,7 @@ func main() {
 	case "replay":
 		rcfg, err := loadReplayConfig()
 		if err != nil {
-			log.Fatalf("replay config: %v", err)
+			reportFatal("replay_config", err.Error())
 		}
 		log.Printf("replay: seed=%d nodes=%d submit=%s mainnet=%s range=%d..%d accounts=%d corpus=%s",
 			rcfg.Seed, len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.MainnetURL,
@@ -136,10 +155,11 @@ func main() {
 		}, rcfg.CorpusDir)
 		stats, err := runners.ReplayRun(ctx, *rcfg)
 		if err != nil {
-			log.Fatalf("replay: %v", err)
+			reportFatal("replay", err.Error())
 		}
 		statsMu.Lock()
 		currentStats = stats
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("replay: done\n%s", blob)
@@ -147,16 +167,17 @@ func main() {
 	case "reproduce":
 		rcfg, err := loadReproduceConfig()
 		if err != nil {
-			log.Fatalf("reproduce config: %v", err)
+			reportFatal("reproduce_config", err.Error())
 		}
 		log.Printf("reproduce: nodes=%d submit=%s log=%s",
 			len(rcfg.NodeURLs), rcfg.SubmitURL, rcfg.LogPath)
 		stats, err := runners.Reproduce(ctx, *rcfg)
 		if err != nil {
-			log.Fatalf("reproduce: %v", err)
+			reportFatal("reproduce", err.Error())
 		}
 		statsMu.Lock()
 		currentStats = stats
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("reproduce: done\n%s", blob)
@@ -164,16 +185,17 @@ func main() {
 	case "shrink":
 		scfg, err := loadShrinkConfig()
 		if err != nil {
-			log.Fatalf("shrink config: %v", err)
+			reportFatal("shrink_config", err.Error())
 		}
 		log.Printf("shrink: nodes=%d submit=%s log=%s div=%s max_step=%d",
 			len(scfg.NodeURLs), scfg.SubmitURL, scfg.LogPath, scfg.DivergenceFile, scfg.MaxStep)
 		res, err := runners.Shrink(ctx, *scfg)
 		if err != nil {
-			log.Fatalf("shrink: %v", err)
+			reportFatal("shrink", err.Error())
 		}
 		statsMu.Lock()
 		currentShrink = res
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(res, "", "  ")
 		log.Printf("shrink: done\n%s", blob)
@@ -181,7 +203,7 @@ func main() {
 	case "soak":
 		cfg, err := loadSoakConfig()
 		if err != nil {
-			log.Fatalf("soak config: %v", err)
+			reportFatal("soak_config", err.Error())
 		}
 		mreg.CurrentSeed.Set(float64(cfg.Seed))
 		mreg.AccountsActive.Set(float64(cfg.AccountN))
@@ -200,12 +222,20 @@ func main() {
 			BatchClose:  cfg.BatchClose.String(),
 			TierWeights: tierWeightsMap(cfg.TierWeights),
 		}, cfg.CorpusDir)
+		// Publish stats live so /status returns counters mid-run, not only
+		// after SoakRun returns.
+		liveStats := &runners.Stats{}
+		cfg.LiveStats = liveStats
+		statsMu.Lock()
+		currentStats = liveStats
+		statsMu.Unlock()
 		stats, err := runners.SoakRun(ctx, *cfg)
 		if err != nil {
-			log.Fatalf("soak: %v", err)
+			reportFatal("soak", err.Error())
 		}
 		statsMu.Lock()
 		currentStats = stats
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(stats, "", "  ")
 		log.Printf("soak: done\n%s", blob)
@@ -213,7 +243,7 @@ func main() {
 	case "chaos":
 		cfg, err := loadChaosConfig()
 		if err != nil {
-			log.Fatalf("chaos config: %v", err)
+			reportFatal("chaos_config", err.Error())
 		}
 		mreg.CurrentSeed.Set(float64(cfg.Seed))
 		mreg.AccountsActive.Set(float64(cfg.AccountN))
@@ -233,12 +263,18 @@ func main() {
 			TierWeights: tierWeightsMap(cfg.TierWeights),
 			Schedule:    os.Getenv("CHAOS_SCHEDULE"),
 		}, cfg.CorpusDir)
+		liveStats := &runners.Stats{}
+		cfg.LiveStats = liveStats
+		statsMu.Lock()
+		currentStats = liveStats
+		statsMu.Unlock()
 		stats, chaosStats, err := runners.ChaosRun(ctx, *cfg)
 		if err != nil {
-			log.Fatalf("chaos: %v", err)
+			reportFatal("chaos", err.Error())
 		}
 		statsMu.Lock()
 		currentStats = stats
+		runComplete = true
 		statsMu.Unlock()
 		blob, _ := json.MarshalIndent(struct {
 			Soak  *runners.Stats `json:"soak"`
@@ -281,14 +317,15 @@ func loadConfig() (*runners.Config, error) {
 	mutationRate := envFloat("MUTATION_RATE", 0.0)
 
 	cfg := &runners.Config{
-		NodeURLs:     nodes,
-		SubmitURL:    submit,
-		Seed:         seed,
-		AccountN:     accounts,
-		TxCount:      txCount,
-		CorpusDir:    corpusDir,
-		BatchClose:   batchClose,
-		MutationRate: mutationRate,
+		NodeURLs:          nodes,
+		SubmitURL:         submit,
+		Seed:              seed,
+		AccountN:          accounts,
+		TxCount:           txCount,
+		CorpusDir:         corpusDir,
+		FindingsMirrorDir: envDefault("FINDINGS_MIRROR_DIR", ""),
+		BatchClose:        batchClose,
+		MutationRate:      mutationRate,
 		TierWeights: accountspkg.TierWeights{
 			Rich:       envInt("TIER_RICH", 1),
 			AtReserve:  envInt("TIER_AT_RESERVE", 0),
@@ -447,10 +484,27 @@ func loadSoakConfig() (*runners.SoakConfig, error) {
 	}
 	rate := envFloat("TX_RATE", 0)
 	rotate, _ := strconv.ParseInt(envDefault("ROTATE_EVERY", "1000"), 10, 64)
+	// Liveness defaults — wide enough to not flap on cold-boot account funding
+	// but tight enough to catch a real stall within the soak budget.
+	stallDur, _ := time.ParseDuration(envDefault("LIVENESS_STALL_THRESHOLD", "30s"))
+	sampleDur, _ := time.ParseDuration(envDefault("LIVENESS_SAMPLE_INTERVAL", "5s"))
+	minPeers, _ := strconv.Atoi(envDefault("LIVENESS_MIN_PEERS", "0"))
+	var enabled []string
+	if v := strings.TrimSpace(os.Getenv("ORACLES")); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				enabled = append(enabled, p)
+			}
+		}
+	}
 	return &runners.SoakConfig{
-		Config:      *base,
-		TxRate:      rate,
-		RotateEvery: rotate,
+		Config:                 *base,
+		TxRate:                 rate,
+		RotateEvery:            rotate,
+		LivenessStallThreshold: stallDur,
+		LivenessSampleInterval: sampleDur,
+		LivenessMinPeers:       minPeers,
+		EnabledOracles:         enabled,
 	}, nil
 }
 
@@ -564,17 +618,29 @@ type statusResponse struct {
 	State  string                `json:"state"`
 	Stats  *runners.Stats        `json:"stats,omitempty"`
 	Shrink *runners.ShrinkResult `json:"shrink,omitempty"`
+	Error  string                `json:"error,omitempty"`
+	Phase  string                `json:"phase,omitempty"`
 }
 
-func serveHTTP(mreg *metrics.Registry, mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult) {
+func serveHTTP(mreg *metrics.Registry, mu *sync.RWMutex, sp **runners.Stats, shp **runners.ShrinkResult, done *bool, runErr *string, phase *string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
 		defer mu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		resp := statusResponse{State: "running", Stats: *sp, Shrink: *shp}
-		if *sp != nil || *shp != nil {
-			resp.State = "completed"
+		state := "running"
+		if done != nil && *done {
+			state = "completed"
+		}
+		if runErr != nil && *runErr != "" {
+			state = "errored"
+		}
+		resp := statusResponse{State: state, Stats: *sp, Shrink: *shp}
+		if runErr != nil {
+			resp.Error = *runErr
+		}
+		if phase != nil {
+			resp.Phase = *phase
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})

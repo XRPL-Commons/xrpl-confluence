@@ -33,14 +33,17 @@ def run(plan, nodes, args = {}):
     rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
     submit_node = rippled_nodes[0]
 
-    # Only wait on rippled nodes. With the rippled-only UNL (see topology.star)
-    # goXRPL can lag far behind without blocking quorum, and at the time of
-    # writing goXRPL has a passive-consensus bug that keeps it at genesis until
-    # validations from rippled reach it correctly. Gating chaos launch on
-    # goXRPL would deadlock on that bug. The chaos runner itself submits txs
-    # through the rippled submit node and oracle-checks the goXRPL nodes, so
-    # any goXRPL divergence still surfaces — it just no longer blocks startup.
-    plan.print("Waiting for rippled nodes to reach closed_seq >= 3...")
+    # Wait only on rippled nodes for readiness — they're the canonical signal
+    # that the network is producing validated ledgers. The current topology
+    # (see topology.star) puts goXRPL in the trusted UNL and sizes quorum over
+    # the full validator set, so goXRPL must be able to emit validations for
+    # consensus to advance at all; with a stale goxrpl image lacking that
+    # support, this wait will time out as a downstream symptom (rippled stalls
+    # at "validated seq: 0"). Diagnose by rebuilding goxrpl:latest from current
+    # goXRPL main. The chaos runner submits txs through the rippled submit
+    # node and oracle-checks the goXRPL nodes, so any divergence still
+    # surfaces during the run.
+    plan.print("Waiting for rippled nodes to reach closed_seq >= 3 (requires goxrpl:latest to validate; see topology.star quorum sizing)...")
     for node in rippled_nodes:
         helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
 
@@ -56,6 +59,7 @@ def run(plan, nodes, args = {}):
         mutation_rate = mutation_rate,
         accounts = accounts,
         alert_webhook_url = args.get("alert_webhook_url", ""),
+        oracles = args.get("oracles", ""),
     )
 
     if args.get("enable_observability", False):

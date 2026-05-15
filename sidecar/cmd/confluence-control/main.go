@@ -41,8 +41,9 @@ func main() {
 	findingStore.SetOnAdd(func(f api.Finding) {
 		bus.Publish(server.Event{Type: "finding", Payload: f, Ts: f.OpenedAt.UnixMilli()})
 	})
+	// The runIDProvider is wired below after server.New so the watcher tags
+	// each ingested divergence with the currently-active run_id.
 	watcher := finding.NewDiskWatcher(*findingsDir, findingStore, 1*time.Second)
-	watcher.Start(ctx)
 
 	emitter := server.NewReproducerEmitter(*reproducersDir, findingStore)
 
@@ -80,9 +81,16 @@ func main() {
 		oracle.Start(ctx)
 	}
 
+	confSrv := server.New(opts...)
+	// Now that the server exists, give the disk watcher a way to look up
+	// the active run_id at ingest time. This is what makes Run.FindingIDs
+	// pick up corpus-mirrored divergences.
+	watcher.WithRunIDProvider(confSrv.CurrentRunID)
+	watcher.Start(ctx)
+
 	srv := &http.Server{
 		Addr:    *listen,
-		Handler: server.New(opts...).Handler(),
+		Handler: confSrv.Handler(),
 	}
 
 	go func() {

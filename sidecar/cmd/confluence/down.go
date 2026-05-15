@@ -38,6 +38,15 @@ func (d *downDeps) run(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		enclaveName = args[0]
 	}
+	// Fall back to the root --enclave persistent flag so half-booted enclaves
+	// (no discovery file written) can still be torn down without a positional
+	// arg. Without this, `confluence --enclave NAME down` silently no-ops on a
+	// failed boot, leaking the enclave.
+	if enclaveName == "" {
+		if v, _ := cmd.Root().PersistentFlags().GetString("enclave"); v != "" {
+			enclaveName = v
+		}
+	}
 
 	ctx := cmd.Context()
 	if ctx == nil {

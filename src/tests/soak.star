@@ -56,11 +56,14 @@ def run(plan, nodes, args = {}):
     rippled_nodes = [n for n in nodes if n["type"] == "rippled"]
     submit_node = rippled_nodes[0] if len(rippled_nodes) > 0 else nodes[0]
 
-    # Only wait on rippled nodes — same rationale as chaos.star: with the
-    # rippled-only UNL goXRPL doesn't gate quorum, and the current goXRPL
-    # passive-consensus bug keeps it stuck at genesis until the upstream fix
-    # lands. Gating soak launch on goXRPL would deadlock the suite startup.
-    plan.print("Waiting for rippled nodes to reach closed_seq >= 3...")
+    # Wait only on rippled nodes for readiness — they're the canonical signal
+    # that the network is producing validated ledgers. The current topology
+    # (see topology.star) puts goXRPL in the trusted UNL and sizes quorum over
+    # the full validator set, so goXRPL must be able to emit validations for
+    # consensus to advance at all; with a stale goxrpl image lacking that
+    # support, this wait will time out as a downstream symptom. Diagnose by
+    # rebuilding `goxrpl:latest` from current goXRPL main.
+    plan.print("Waiting for rippled nodes to reach closed_seq >= 3 (requires goxrpl:latest to validate; see topology.star quorum sizing)...")
     for node in rippled_nodes:
         helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
 
@@ -78,6 +81,7 @@ def run(plan, nodes, args = {}):
         accounts = accounts,
         corpus_host_path = corpus_host_path,
         alert_webhook_url = args.get("alert_webhook_url", ""),
+        oracles = args.get("oracles", ""),
     )
 
     plan.print("fuzz-soak service is up. Corpus accumulates in persistent volume 'fuzz-soak-output' at /output/corpus.")

@@ -32,7 +32,11 @@ type Config struct {
 	AccountN     int
 	TxCount      int
 	CorpusDir    string
-	BatchClose   time.Duration
+	// FindingsMirrorDir, when non-empty, gets a copy of every divergence JSON
+	// (without signatures/runlog) — used by the kurtosis topology to surface
+	// divergences to confluence-control's disk_watcher via a shared volume.
+	FindingsMirrorDir string
+	BatchClose        time.Duration
 	SkipFund     bool    // escape hatch: skip genesis funding (unit tests)
 	SkipSetup    bool    // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
 	MutationRate float64 // 0..1; probability each generated tx is mutated

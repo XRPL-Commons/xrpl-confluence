@@ -132,10 +132,15 @@ def submit_payment_recipe(secret, account, destination, amount):
 def wait_for_ledger_seq(plan, node, min_seq, timeout = "120s"):
     """Wait until a node's current ledger index reaches min_seq.
 
-    Uses the ledger_current RPC which returns ledger_current_index — a field
-    that is always present regardless of whether the network has reached
-    validation quorum (server_info's closed_ledger and validated_ledger fields
-    are mutually exclusive depending on node state).
+    Uses the ledger_current RPC; the response carries ledger_current_index
+    only once the node has acquired a validated ledger from the network. A
+    quorum-failing UNL — e.g. a stale goxrpl:latest image that can't emit
+    validations while topology.star puts goxrpl in the trusted set — leaves
+    rippled stuck producing closed-but-unvalidated ledgers, and ledger_current
+    returns {"error":"noCurrent","error_code":16}. The kurtosis recipe
+    extractor then errors with "No field '.result.ledger_current_index'", and
+    this wait times out. If you hit that, check that goxrpl:latest is built
+    from current goXRPL main (passive consensus / emit-validations support).
 
     Args:
         plan: Kurtosis plan object.

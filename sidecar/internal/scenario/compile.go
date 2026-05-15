@@ -30,6 +30,17 @@ func Compile(s *api.Scenario) ([]byte, error) {
 		"goxrpl_image":  s.Topology.Goxrpl.Image,
 	}
 
+	// Comma-joined list of enabled oracles (empty = runner defaults to all
+	// implemented oracles enabled). Pushed through to the fuzz sidecar via
+	// the ORACLES env var; see src/sidecar/fuzz.star.
+	oraclesCSV := ""
+	for i, o := range s.Oracles {
+		if i > 0 {
+			oraclesCSV += ","
+		}
+		oraclesCSV += o
+	}
+
 	workArgs := map[string]any{
 		"tx_rate":              s.Workload.TxRate,
 		"accounts":             s.Workload.Accounts,
@@ -37,6 +48,7 @@ func Compile(s *api.Scenario) ([]byte, error) {
 		"mutation_rate":        s.Workload.MutationRate,
 		"enable_observability": s.Observability.Enabled,
 		"alert_webhook_url":    s.Observability.AlertWebhookURL,
+		"oracles":              oraclesCSV,
 	}
 
 	switch s.Workload.Kind {

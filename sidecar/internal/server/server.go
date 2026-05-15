@@ -107,3 +107,10 @@ func WithScenariosDir(dir string) Option {
 func WithReproducerEmitter(e *ReproducerEmitter) Option {
 	return func(s *Server) { s.reproducerEmitter = e }
 }
+
+// CurrentRunID returns the ID of the currently-active run, or "" if none.
+// Exposed so external ingestion (e.g. finding.DiskWatcher) can tag fresh
+// findings with the right run_id at the moment they arrive.
+func (s *Server) CurrentRunID() string {
+	return s.currentRunID()
+}
