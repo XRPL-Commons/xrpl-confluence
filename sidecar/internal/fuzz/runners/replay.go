@@ -68,12 +68,14 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
+			recordSetupFailure(rec, nil, nil, "replay", "fund", err)
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
 	}
 	if !cfg.SkipSetup {
 		if err := accounts.SetupState(submit, pool); err != nil {
+			recordSetupFailure(rec, nil, nil, "replay", "setup_state", err)
 			return nil, fmt.Errorf("setup state: %w", err)
 		}
 	}
@@ -91,6 +93,7 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 	var stats Stats
 	stats.Seed = cfg.Seed
 	i := 0
+	var failLogSeq int64
 
 	for it.Next() {
 		if err := ctx.Err(); err != nil {
@@ -114,6 +117,8 @@ func ReplayRun(ctx context.Context, cfg ReplayConfig) (*Stats, error) {
 		res, err := submit.SubmitTxJSON(secret, out)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
+			txType, _ := out["TransactionType"].(string)
+			recordFailure(nil, txLog, 20, &failLogSeq, i, txType, out, secret, res, err)
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)

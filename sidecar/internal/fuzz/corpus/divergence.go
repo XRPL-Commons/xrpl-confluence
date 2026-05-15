@@ -23,14 +23,24 @@ type Divergence struct {
 
 // Recorder owns the on-disk corpus for a single fuzz run.
 type Recorder struct {
-	baseDir string
-	seed    uint64
-	counter atomic.Uint64
+	baseDir   string
+	mirrorDir string // optional second dir for divergence JSON only (no signatures)
+	seed      uint64
+	counter   atomic.Uint64
 }
 
 // NewRecorder creates a Recorder writing under baseDir/divergences/.
 func NewRecorder(baseDir string, seed uint64) *Recorder {
 	return &Recorder{baseDir: baseDir, seed: seed}
+}
+
+// WithMirrorDir configures the Recorder to also drop a copy of every
+// divergence JSON in <mirrorDir>/divergences/<filename>. Used to surface
+// divergences to confluence-control's disk_watcher without sharing the full
+// corpus (signatures/runlog stay local to baseDir). Empty disables mirroring.
+func (r *Recorder) WithMirrorDir(mirrorDir string) *Recorder {
+	r.mirrorDir = mirrorDir
+	return r
 }
 
 // RecordDivergence writes one divergence JSON file under
@@ -62,6 +72,15 @@ func (r *Recorder) RecordDivergence(d *Divergence) (bool, error) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+
+	// Optional mirror — best-effort. A mirror failure should not block the
+	// fuzz loop nor lose the primary write we just succeeded.
+	if r.mirrorDir != "" {
+		mDir := filepath.Join(r.mirrorDir, "divergences")
+		if mkErr := os.MkdirAll(mDir, 0o755); mkErr == nil {
+			_ = os.WriteFile(filepath.Join(mDir, name), data, 0o644)
+		}
 	}
 
 	first, err := r.updateSignatureIndex(d, data)

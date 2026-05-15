@@ -13,11 +13,12 @@ import (
 
 // DiskWatcher polls <dir>/divergences/*.json and ingests new files into a Store.
 type DiskWatcher struct {
-	dir      string
-	interval time.Duration
-	store    *Store
-	seen     map[string]bool
-	cancel   context.CancelFunc
+	dir            string
+	interval       time.Duration
+	store          *Store
+	seen           map[string]bool
+	cancel         context.CancelFunc
+	runIDProvider  func() string // optional; tags ingested findings with the active run_id
 }
 
 func NewDiskWatcher(dir string, store *Store, interval time.Duration) *DiskWatcher {
@@ -27,6 +28,16 @@ func NewDiskWatcher(dir string, store *Store, interval time.Duration) *DiskWatch
 		store:    store,
 		seen:     make(map[string]bool),
 	}
+}
+
+// WithRunIDProvider configures the watcher to tag ingested findings with the
+// active run_id reported by p. Used to attribute fuzz-soak corpus divergences
+// (which know nothing about confluence-control Run lifecycle) to whichever
+// Run was active at the moment they arrived. Empty result → leave RunID
+// untouched.
+func (w *DiskWatcher) WithRunIDProvider(p func() string) *DiskWatcher {
+	w.runIDProvider = p
+	return w
 }
 
 // Start spawns the polling goroutine. It stops when ctx is cancelled or Stop
@@ -95,6 +106,11 @@ func (w *DiskWatcher) ingest(path string) {
 	if err != nil {
 		log.Printf("disk_watcher: map %s: %v", path, err)
 		return
+	}
+	if f.RunID == "" && w.runIDProvider != nil {
+		if rid := w.runIDProvider(); rid != "" {
+			f.RunID = rid
+		}
 	}
 	w.store.Add(f)
 }

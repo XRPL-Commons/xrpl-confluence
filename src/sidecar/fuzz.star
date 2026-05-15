@@ -122,7 +122,8 @@ def launch_soak(
     mutation_rate = 0.0,
     accounts = 50,
     corpus_host_path = "",
-    alert_webhook_url = ""):
+    alert_webhook_url = "",
+    oracles = ""):
     """Launch the fuzz sidecar in soak (unbounded) mode.
 
     See launch() for fuzz/shrink modes; this wrapper keeps soak's longer-lived
@@ -158,26 +159,33 @@ def launch_soak(
 
     # Kurtosis 1.x has no host-path bind-mount primitive. Use a persistent
     # volume so the corpus survives enclave restarts within the same run.
+    # The `confluence-findings` persistent volume is ALSO mounted on the
+    # confluence-control service, giving its disk_watcher visibility into
+    # the divergences this sidecar produces.
     files = {
-        "/output": Directory(persistent_key = "fuzz-soak-output"),
+        "/output":                  Directory(persistent_key = "fuzz-soak-output"),
+        "/var/confluence/findings": Directory(persistent_key = "confluence-findings"),
     }
 
     env_vars = {
-        "MODE":             "soak",
-        "NODES":            node_urls,
-        "SUBMIT_URL":       submit_url,
-        "ACCOUNTS":         str(accounts),
-        "TX_RATE":          str(tx_rate),
-        "ROTATE_EVERY":     str(rotate_every),
-        "MUTATION_RATE":    str(mutation_rate),
-        "CORPUS_DIR":       "/output/corpus",
-        "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
-        "CRASH_LABEL_VAL":  "node",
-        "CRASH_TAIL_LINES": "200",
-        "DOCKER_HOST":      "tcp://host.docker.internal:2375",
+        "MODE":                "soak",
+        "NODES":               node_urls,
+        "SUBMIT_URL":          submit_url,
+        "ACCOUNTS":            str(accounts),
+        "TX_RATE":             str(tx_rate),
+        "ROTATE_EVERY":        str(rotate_every),
+        "MUTATION_RATE":       str(mutation_rate),
+        "CORPUS_DIR":          "/output/corpus",
+        "FINDINGS_MIRROR_DIR": "/var/confluence/findings",
+        "CRASH_LABEL_KEY":     "com.kurtosistech.custom.fuzzer.role",
+        "CRASH_LABEL_VAL":     "node",
+        "CRASH_TAIL_LINES":    "200",
+        "DOCKER_HOST":         "tcp://host.docker.internal:2375",
     }
     if alert_webhook_url != "":
         env_vars["ALERT_WEBHOOK_URL"] = alert_webhook_url
+    if oracles != "":
+        env_vars["ORACLES"] = oracles
 
     return plan.add_service(
         name = "fuzz-soak",
@@ -206,7 +214,8 @@ def launch_chaos(
     rotate_every = 1000,
     mutation_rate = 0.0,
     accounts = 50,
-    alert_webhook_url = ""):
+    alert_webhook_url = "",
+    oracles = ""):
     """Launch the fuzz sidecar in chaos mode.
 
     Same wiring as launch_soak plus CHAOS_SCHEDULE (JSON string). The
@@ -221,26 +230,30 @@ def launch_chaos(
     submit_url = "http://{}:5005".format(submit_node["name"])
 
     files = {
-        "/output": Directory(persistent_key = "fuzz-chaos-output"),
+        "/output":                  Directory(persistent_key = "fuzz-chaos-output"),
+        "/var/confluence/findings": Directory(persistent_key = "confluence-findings"),
     }
 
     env_vars = {
-        "MODE":             "chaos",
-        "NODES":            node_urls,
-        "SUBMIT_URL":       submit_url,
-        "ACCOUNTS":         str(accounts),
-        "TX_RATE":          str(tx_rate),
-        "ROTATE_EVERY":     str(rotate_every),
-        "MUTATION_RATE":    str(mutation_rate),
-        "CORPUS_DIR":       "/output/corpus",
-        "CRASH_LABEL_KEY":  "com.kurtosistech.custom.fuzzer.role",
-        "CRASH_LABEL_VAL":  "node",
-        "CRASH_TAIL_LINES": "200",
-        "DOCKER_HOST":      "tcp://host.docker.internal:2375",
-        "CHAOS_SCHEDULE":   chaos_schedule,
+        "MODE":                "chaos",
+        "NODES":               node_urls,
+        "SUBMIT_URL":          submit_url,
+        "ACCOUNTS":            str(accounts),
+        "TX_RATE":             str(tx_rate),
+        "ROTATE_EVERY":        str(rotate_every),
+        "MUTATION_RATE":       str(mutation_rate),
+        "CORPUS_DIR":          "/output/corpus",
+        "FINDINGS_MIRROR_DIR": "/var/confluence/findings",
+        "CRASH_LABEL_KEY":     "com.kurtosistech.custom.fuzzer.role",
+        "CRASH_LABEL_VAL":     "node",
+        "CRASH_TAIL_LINES":    "200",
+        "DOCKER_HOST":         "tcp://host.docker.internal:2375",
+        "CHAOS_SCHEDULE":      chaos_schedule,
     }
     if alert_webhook_url != "":
         env_vars["ALERT_WEBHOOK_URL"] = alert_webhook_url
+    if oracles != "":
+        env_vars["ORACLES"] = oracles
 
     return plan.add_service(
         name = "fuzz-chaos",

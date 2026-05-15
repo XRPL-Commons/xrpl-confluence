@@ -4,7 +4,7 @@ CONTROL_PORT = 8090
 RPC_PORT = 5005
 
 
-def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-confluence-sidecar:m2dogfood"):
+def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-confluence-sidecar:latest"):
     """Launch the confluence-control service.
 
     Args:
@@ -61,8 +61,13 @@ def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-
                 ),
             },
             files = {
-                "/app/config": config_artifact,
-                "/app/scenarios": scenarios_artifact,
+                "/app/config":              config_artifact,
+                "/app/scenarios":           scenarios_artifact,
+                # Shared persistent volume with the fuzz-soak/fuzz-chaos
+                # sidecar. The disk_watcher (--findings-dir default) tails
+                # this dir for divergences mirrored from the fuzz corpus, so
+                # `confluence findings` surfaces them via /v1/findings.
+                "/var/confluence/findings": Directory(persistent_key = "confluence-findings"),
             },
         ),
     )

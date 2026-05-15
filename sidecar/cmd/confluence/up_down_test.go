@@ -396,6 +396,45 @@ func TestDown_PositionalArg(t *testing.T) {
 	}
 }
 
+func TestDown_PersistentEnclaveFlag(t *testing.T) {
+	// `confluence --enclave NAME down` must work without discovery — covers
+	// the half-booted-enclave teardown path (Bug #5).
+	withDiscoveryDir(t)
+
+	cli := &fakeCLI{}
+	deps := &downDeps{cli: cli}
+
+	stdout, _, err := runDownCmd(t, deps, "--enclave", "half-booted-enc", "down", "--json")
+	if err != nil {
+		t.Fatalf("down: %v", err)
+	}
+
+	var got struct {
+		EnclaveID string `json:"enclave_id"`
+		OK        bool   `json:"ok"`
+	}
+	if jerr := json.Unmarshal([]byte(stdout), &got); jerr != nil {
+		t.Fatalf("not JSON: %v (out=%q)", jerr, stdout)
+	}
+	if got.EnclaveID != "half-booted-enc" {
+		t.Errorf("enclave_id: got %q want %q", got.EnclaveID, "half-booted-enc")
+	}
+	if !got.OK {
+		t.Errorf("expected ok:true")
+	}
+
+	var gotRM bool
+	for _, run := range cli.runs {
+		if len(run) >= 4 && run[0] == "enclave" && run[1] == "rm" && run[3] == "half-booted-enc" {
+			gotRM = true
+			break
+		}
+	}
+	if !gotRM {
+		t.Errorf("expected enclave rm half-booted-enc; got: %v", cli.runs)
+	}
+}
+
 func TestDown_NoEnclaveNoDiscovery(t *testing.T) {
 	withDiscoveryDir(t)
 

@@ -10,6 +10,7 @@ import (
 func TestRegistry_ExposesFuzzCounters(t *testing.T) {
 	r := New()
 	r.TxsSubmitted.WithLabelValues("Payment", "valid").Inc()
+	r.TxsFailed.WithLabelValues("OfferCreate", "tecUNFUNDED_OFFER").Inc()
 	r.Divergences.WithLabelValues("tx_result").Inc()
 	r.Crashes.WithLabelValues("goxrpl-0", "go_panic").Inc()
 
@@ -25,6 +26,7 @@ func TestRegistry_ExposesFuzzCounters(t *testing.T) {
 
 	for _, want := range []string{
 		`fuzz_txs_submitted_total{mode="valid",tx_type="Payment"} 1`,
+		`fuzz_txs_failed_total{result="tecUNFUNDED_OFFER",tx_type="OfferCreate"} 1`,
 		`fuzz_divergences_total{layer="tx_result"} 1`,
 		`fuzz_crashes_total{impl="go_panic",node="goxrpl-0"} 1`,
 	} {

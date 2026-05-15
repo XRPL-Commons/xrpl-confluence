@@ -160,6 +160,9 @@ func (s *Server) runByID(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Late-attribution: divergences tagged with this run_id but ingested
+	// after the run closed (corpus mirror latency) get appended on read.
+	s.syncFindingsForRun(run)
 	s.runs.mu.RLock()
 	cp := *run
 	s.runs.mu.RUnlock()
@@ -268,6 +271,14 @@ func (s *Server) handleStopOnTrigger(run *Run, sc api.Scenario, trigger api.Find
 
 func (s *Server) closeRun(run *Run, status, triggerID string) {
 	now := time.Now()
+
+	// Final sweep: pull in any findings tagged with this run_id that
+	// arrived between the last watchRun tick and now (disk_watcher latency,
+	// re-ordering through the event bus, etc.). Without this, divergences
+	// surfaced via the corpus-mirror bridge can be lost if their ingest
+	// races with closeRun.
+	s.syncFindingsForRun(run)
+
 	s.runs.mu.Lock()
 	run.Status = status
 	run.EndedAt = &now
@@ -276,5 +287,29 @@ func (s *Server) closeRun(run *Run, status, triggerID string) {
 
 	if s.eventBus != nil {
 		s.eventBus.Publish(Event{Type: "run_completed", Payload: *run, Ts: now.UnixMilli()})
+	}
+}
+
+// syncFindingsForRun appends to run.FindingIDs any finding in the store whose
+// RunID matches this run and isn't already attributed. Safe to call any time.
+// Used for the closeRun final sweep AND on every GetRun read so late-arriving
+// divergences (corpus-mirror latency) get attributed to the right Run even if
+// they land after closeRun.
+func (s *Server) syncFindingsForRun(run *Run) {
+	if s.findingStore == nil {
+		return
+	}
+	all := s.findingStore.List(finding.ListOpts{Limit: 1000})
+	s.runs.mu.Lock()
+	defer s.runs.mu.Unlock()
+	already := make(map[string]bool, len(run.FindingIDs))
+	for _, id := range run.FindingIDs {
+		already[id] = true
+	}
+	for _, f := range all {
+		if f.RunID != run.ID || already[f.ID] {
+			continue
+		}
+		run.FindingIDs = append(run.FindingIDs, f.ID)
 	}
 }

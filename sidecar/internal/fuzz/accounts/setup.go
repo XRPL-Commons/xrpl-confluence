@@ -20,10 +20,14 @@ var (
 	SetupIOUFunding = "10000"   // amount of IOU each holder receives from each issuer
 	SetupLedgerWait = 5 * time.Second
 	// SetupMaxRetries is the number of times to retry a transient RPC error
-	// (e.g. noCurrent, notReady, tooBusy) before giving up.
-	SetupMaxRetries = 6
+	// (e.g. noCurrent, notReady, tooBusy, telCAN_NOT_QUEUE_FULL) before
+	// giving up. Sized so a 50-account TrustSet mesh (2450 tx) under default
+	// rippled queue limits survives a transient queue-full burst:
+	// 30 retries × 3s = 90s max per submission, comfortably above the
+	// observed steady-state queue drain time of ~30s during dense setup.
+	SetupMaxRetries = 30
 	// SetupRetryDelay is the wait between retries for transient errors.
-	SetupRetryDelay = 2 * time.Second
+	SetupRetryDelay = 3 * time.Second
 )
 
 // SetupState seeds a dense trust-line + IOU-balance mesh between every pair
@@ -128,6 +132,10 @@ func retrySubmit(maxRetries int, fn func() (*rpcclient.SubmitResult, error)) err
 		if res.EngineResult == "tesSUCCESS" || res.EngineResult == "terQUEUED" {
 			return nil
 		}
+		if strings.HasPrefix(res.EngineResult, "tel") || strings.HasPrefix(res.EngineResult, "ter") {
+			lastErr = fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
+			continue
+		}
 		return fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
 	}
 	return fmt.Errorf("transient error after %d retries: %w", maxRetries, lastErr)
@@ -142,7 +150,8 @@ func isTransientRPCError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "noCurrent") ||
 		strings.Contains(msg, "notReady") ||
-		strings.Contains(msg, "tooBusy")
+		strings.Contains(msg, "tooBusy") ||
+		strings.Contains(msg, "highFee")
 }
 
 // waitForValidation polls ServerInfo until validated_ledger.seq has advanced

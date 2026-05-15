@@ -25,10 +25,17 @@ func resolveControlURL(ctx context.Context, cmd *cobra.Command, cli kurtosis.CLI
 		if err != nil {
 			return "", fmt.Errorf("kurtosis inspect for --enclave %q: %w", enclave, err)
 		}
-		if svc.IPAddress == "" {
-			return "", fmt.Errorf("confluence-control service in enclave %q has no IP address", enclave)
+		// Prefer the host-published URL (e.g. http://127.0.0.1:54944): the
+		// enclave-internal bridge IP returned by `kurtosis service inspect` is
+		// unreachable from the host on Docker Desktop for Mac, and is reported
+		// empty even when the service is RUNNING.
+		if hostURL, ok := svc.PortURLs["http"]; ok && hostURL != "" {
+			return hostURL, nil
 		}
-		return fmt.Sprintf("http://%s:8090", svc.IPAddress), nil
+		if svc.IPAddress != "" {
+			return fmt.Sprintf("http://%s:8090", svc.IPAddress), nil
+		}
+		return "", fmt.Errorf("confluence-control service in enclave %q has neither a host-published http port nor an IP address", enclave)
 	}
 
 	cur, err := discovery.Read()

@@ -141,6 +141,98 @@ func TestSetupState_SkipsWhenPoolTooSmall(t *testing.T) {
 	}
 }
 
+func TestRetrySubmit_RetriesTelAndTer(t *testing.T) {
+	defer func(prev time.Duration) { SetupRetryDelay = prev }(SetupRetryDelay)
+	SetupRetryDelay = 1 * time.Millisecond
+
+	results := []string{
+		`{"result":{"engine_result":"telCAN_NOT_QUEUE_FULL","engine_result_code":-389,"engine_result_message":"queue full","tx_json":{"hash":"X"},"status":"success"}}`,
+		`{"result":{"engine_result":"terPRE_SEQ","engine_result_code":-95,"engine_result_message":"prior tx","tx_json":{"hash":"X"},"status":"success"}}`,
+		`{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"","tx_json":{"hash":"OK"},"status":"success"}}`,
+	}
+	var mu sync.Mutex
+	var i int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		body := results[i]
+		if i < len(results)-1 {
+			i++
+		}
+		mu.Unlock()
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := rpcclient.New(srv.URL)
+	err := retrySubmit(5, func() (*rpcclient.SubmitResult, error) {
+		return client.SubmitPayment("s", "rA", "rB", "1")
+	})
+	if err != nil {
+		t.Fatalf("retrySubmit: %v", err)
+	}
+}
+
+func TestRetrySubmit_StopsOnNonTransientResult(t *testing.T) {
+	defer func(prev time.Duration) { SetupRetryDelay = prev }(SetupRetryDelay)
+	SetupRetryDelay = 1 * time.Millisecond
+
+	var mu sync.Mutex
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"result":{"engine_result":"tecNO_LINE","engine_result_code":103,"engine_result_message":"no line","tx_json":{"hash":"X"},"status":"success"}}`))
+	}))
+	defer srv.Close()
+
+	client := rpcclient.New(srv.URL)
+	err := retrySubmit(5, func() (*rpcclient.SubmitResult, error) {
+		return client.SubmitPayment("s", "rA", "rB", "1")
+	})
+	if err == nil {
+		t.Fatal("expected error on tecNO_LINE")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("tec result must not be retried: got %d calls", calls)
+	}
+}
+
+func TestRetrySubmit_RetriesHighFeeRPCError(t *testing.T) {
+	defer func(prev time.Duration) { SetupRetryDelay = prev }(SetupRetryDelay)
+	SetupRetryDelay = 1 * time.Millisecond
+
+	var mu sync.Mutex
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n <= 2 {
+			_, _ = w.Write([]byte(`{"result":{"error":"highFee","error_code":11,"error_message":"Fee of 10342 exceeds the requested tx limit of 10000","status":"error"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":{"engine_result":"tesSUCCESS","engine_result_code":0,"engine_result_message":"","tx_json":{"hash":"OK"},"status":"success"}}`))
+	}))
+	defer srv.Close()
+
+	client := rpcclient.New(srv.URL)
+	err := retrySubmit(5, func() (*rpcclient.SubmitResult, error) {
+		return client.SubmitPayment("s", "rA", "rB", "1")
+	})
+	if err != nil {
+		t.Fatalf("retrySubmit: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 3 {
+		t.Fatalf("expected 3 attempts (2 highFee + success), got %d", calls)
+	}
+}
+
 func TestWaitForValidation_ReturnsAfterSeqAdvance(t *testing.T) {
 	var callCount atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

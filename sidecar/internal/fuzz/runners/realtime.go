@@ -32,7 +32,11 @@ type Config struct {
 	AccountN     int
 	TxCount      int
 	CorpusDir    string
-	BatchClose   time.Duration
+	// FindingsMirrorDir, when non-empty, gets a copy of every divergence JSON
+	// (without signatures/runlog) — used by the kurtosis topology to surface
+	// divergences to confluence-control's disk_watcher via a shared volume.
+	FindingsMirrorDir string
+	BatchClose        time.Duration
 	SkipFund     bool    // escape hatch: skip genesis funding (unit tests)
 	SkipSetup    bool    // escape hatch: skip trust-line/IOU mesh seeding (unit tests)
 	MutationRate float64 // 0..1; probability each generated tx is mutated
@@ -153,6 +157,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 
 	if !cfg.SkipFund {
 		if err := accounts.FundFromGenesis(submit, pool, 10_000_000_000); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "fund", err)
 			return nil, fmt.Errorf("fund pool: %w", err)
 		}
 		time.Sleep(5 * time.Second)
@@ -160,6 +165,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	if !cfg.SkipSetup {
 		log.Printf("realtime: seeding state mesh (%d accounts) ...", cfg.AccountN)
 		if err := accounts.SetupState(submit, pool); err != nil {
+			recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "setup_state", err)
 			return nil, fmt.Errorf("setup state: %w", err)
 		}
 		log.Printf("realtime: state mesh seeded")
@@ -167,6 +173,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 
 	enabled, err := generator.DiscoverEnabledAmendments(submit)
 	if err != nil {
+		recordSetupFailure(rec, cfg.Metrics, cfg.Alerter, "realtime", "discover_amendments", err)
 		return nil, fmt.Errorf("amendments: %w", err)
 	}
 	log.Printf("realtime: %d amendments enabled", len(enabled))
@@ -179,6 +186,7 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 	}
 	lastCompared := info.ValidatedLedger.Seq
 
+	var failLogSeq int64
 	for i := 0; i < cfg.TxCount; i++ {
 		if err := ctx.Err(); err != nil {
 			break
@@ -207,11 +215,8 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 		res, err := submitTx(submit, tx, cfg.LocalSign)
 		if err != nil || (res.EngineResult != "tesSUCCESS" && res.EngineResult != "terQUEUED") {
 			atomic.AddInt64(&stats.TxsFailed, 1)
-			if err != nil {
-				log.Printf("realtime: submit %s: %v", tx.TransactionType(), err)
-			} else {
-				log.Printf("realtime: submit %s: %s (%s)", tx.TransactionType(), res.EngineResult, res.EngineResultMessage)
-			}
+			recordFailure(cfg.Metrics, txLog, 20, &failLogSeq, i,
+				tx.TransactionType(), tx.Fields, tx.Secret, res, err)
 			continue
 		}
 		atomic.AddInt64(&stats.TxsSucceeded, 1)

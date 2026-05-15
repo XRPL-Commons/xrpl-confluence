@@ -100,6 +100,12 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, scenarioPath, enc
 		PackageDir:    packageDir,
 		Args:          argsJSON,
 		TearDownFirst: tearDownFirst,
+		MaxAttempts:   3,
+		OnRetry: func(attempt int, prev error) {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"kurtosis run transient failure (attempt %d/3): %v\nretrying with a fresh enclave...\n",
+				attempt-1, prev)
+		},
 	})
 	if err != nil {
 		return nil, err
