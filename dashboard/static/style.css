@@ -144,6 +144,23 @@ body { padding: 24px; }
 .new-chip[hidden] { display: none; }
 .timeline-empty { padding: 36px 0; text-align: center; font: italic 12px/1.4 var(--serif); color: var(--mid); }
 
+/* Chains (per-client block history) */
+.chains-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 14px; overflow-x: auto; overflow-y: hidden; border-top: 1px solid var(--ink); padding-top: 10px; }
+.chain-col { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--rule); }
+.chain-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--ink); font: 500 12px/1 var(--sans); background: rgba(0,0,0,0.02); }
+.chain-name { flex: 1; }
+.chain-lag { font: 500 11px/1 var(--mono); color: var(--red); }
+.chain-tip-leader { font: 500 11px/1 var(--mono); color: var(--cobalt); }
+.chain-cells { flex: 1; overflow-y: auto; padding: 4px 0; }
+.chain-cell { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+.chain-cell:hover { background: rgba(0,0,0,0.03); }
+.chain-cell.tip { background: rgba(31,61,255,0.04); }
+.chain-cell.diverged { border-left: 2px solid var(--red); padding-left: 8px; }
+.chain-cell.diverged .chain-hash { color: var(--red); }
+.chain-seq { font: 500 13px/1 var(--serif); letter-spacing: -0.01em; }
+.chain-hash { font: 11px/1 var(--mono); color: var(--mid); }
+.chain-empty { padding: 24px 10px; text-align: center; font: italic 11px/1.4 var(--serif); color: var(--mid); }
+
 /* Block (ledger) details */
 .block-controls { justify-content: space-between; }
 .block-back { background: none; border: 1px solid var(--ink); padding: 4px 10px; font: 500 11px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; color: var(--ink); }

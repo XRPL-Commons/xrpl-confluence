@@ -36,6 +36,7 @@
     <section class="main" data-pane="main" id="main">
       <nav class="main-switch" id="main-switch" role="tablist">
         <button class="seg active" data-view="timeline" role="tab">Timeline<span class="seg-badge" id="seg-timeline-badge" hidden></span></button>
+        <button class="seg" data-view="chains" role="tab">Chains<span class="seg-badge" id="seg-chains-badge" hidden></span></button>
         <button class="seg" data-view="topology" role="tab">Topology</button>
         <button class="seg" data-view="fuzzer" role="tab">Fuzzer<span class="seg-badge" id="seg-fuzzer-badge" hidden></span></button>
       </nav>
@@ -48,6 +49,12 @@
         </div>
         <div class="timeline" id="timeline-list"></div>
         <button class="new-chip" id="timeline-new-chip" hidden>↓ <span id="timeline-new-count">0</span> new</button>
+      </div>
+
+      <div class="view view-chains" data-view="chains">
+        <h1 class="title">Chains.</h1>
+        <p class="subtitle">Per-client tip and recent history. Highlighted cells diverge from the majority hash; lag is shown as <span class="mono">−n</span> behind the leader.</p>
+        <div class="chains-grid" id="chains-grid"></div>
       </div>
 
       <div class="view view-topology" data-view="topology">
@@ -133,7 +140,7 @@
       <div class="cheatsheet-card">
         <h2>Shortcuts</h2>
         <dl>
-          <dt>1 / 2 / 3</dt><dd>Timeline / Topology / Fuzzer</dd>
+          <dt>1 / 2 / 3 / 4</dt><dd>Timeline / Chains / Topology / Fuzzer</dd>
           <dt>j / k</dt><dd>Walk focused list</dd>
           <dt>/</dt><dd>Focus filter</dd>
           <dt>esc</dt><dd>Clear filter → selection → collapse inspector</dd>

@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const VIEWS = ["timeline", "topology", "fuzzer", "block"];
-  const NAV_VIEWS = ["timeline", "topology", "fuzzer"];
+  const VIEWS = ["timeline", "chains", "topology", "fuzzer", "block"];
+  const NAV_VIEWS = ["timeline", "chains", "topology", "fuzzer"];
   const PANES = ["rail", "main", "inspector"];
   const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
@@ -24,7 +24,7 @@
     nodes: [],
     fuzz: null,
     logs: {},
-    block: { seq: null, data: null, loading: false, error: null, source: null },
+    block: { seq: null, data: null, loading: false, error: null, source: null, from: "timeline" },
     lastUpdate: 0,
     pendingUpdates: 0,
     sync: "connecting",
@@ -114,25 +114,28 @@
   async function loadBlock(seq) {
     seq = Number(seq);
     if (!Number.isInteger(seq) || seq <= 0) return;
-    store.set({ block: { seq, data: null, loading: true, error: null, source: null } });
+    const current = store.get();
+    const from = current.ui.view === "block" ? current.block.from : (NAV_VIEWS.includes(current.ui.view) ? current.ui.view : "timeline");
+    store.set({ block: { seq, data: null, loading: true, error: null, source: null, from } });
     store.setUI({ view: "block" });
     pushHash();
     try {
       const url = MOCK ? "/fixtures/mock-ledger.json" : `/api/ledger/${seq}`;
       const data = await fetchJSON(url);
       if (data && data.result) {
-        store.set({ block: { seq, data: data.result, loading: false, error: null, source: data.source || null } });
+        store.set({ block: { seq, data: data.result, loading: false, error: null, source: data.source || null, from } });
       } else {
-        store.set({ block: { seq, data: null, loading: false, error: (data && data.error) || "Unknown response", source: null } });
+        store.set({ block: { seq, data: null, loading: false, error: (data && data.error) || "Unknown response", source: null, from } });
       }
     } catch (e) {
-      store.set({ block: { seq, data: null, loading: false, error: e.message, source: null } });
+      store.set({ block: { seq, data: null, loading: false, error: e.message, source: null, from } });
     }
   }
 
   function exitBlock() {
-    store.set({ block: { seq: null, data: null, loading: false, error: null, source: null } });
-    store.setUI({ view: "timeline" });
+    const from = store.get().block.from || "timeline";
+    store.set({ block: { seq: null, data: null, loading: false, error: null, source: null, from: "timeline" } });
+    store.setUI({ view: from });
     pushHash();
   }
 
@@ -204,9 +207,9 @@
 
   // ── View switcher subscriber ────────────────────────────────
   store.subscribe((s) => {
-    // The Block view is a sub-route of Timeline — keep the Timeline tab lit
-    // while it's open so the nav still tells the user where they are.
-    const navView = s.ui.view === "block" ? "timeline" : s.ui.view;
+    // The Block view is a sub-route — keep its parent tab lit while it's open
+    // so the nav still tells the user where they came from.
+    const navView = s.ui.view === "block" ? (s.block.from || "timeline") : s.ui.view;
     for (const seg of document.querySelectorAll(".seg")) {
       seg.classList.toggle("active", seg.dataset.view === navView);
     }
@@ -300,11 +303,34 @@
 
   // ── Timeline state ──────────────────────────────────────────
   const MAX_TIMELINE = 80;
+  const MAX_CHAIN = 60;
   const prevValidatedSeqs = {};
   const prevClosedSeqs = {};
   const closeRows = new Map(); // seq → { time, hash, byNode: Map }
+  // Per-node validated history (newest first), used by the Chains view to
+  // visualize live desync. Each entry: { seq, hash, time }.
+  const nodeChains = {};
+  // seq → Map(nodeName → hash). Lets the Chains view colour each cell
+  // against the majority hash for that seq across the fleet.
+  const seqHashByNode = new Map();
   let pendingNew = 0;
   let timelinePinned = false;
+
+  function pushNodeChain(name, seq, hash, time) {
+    const list = nodeChains[name] || (nodeChains[name] = []);
+    if (list.length && list[0].seq === seq) {
+      // Same tip — fill in a hash we didn't have yet.
+      if (!list[0].hash && hash) list[0].hash = hash;
+    } else if (!list.length || list[0].seq < seq) {
+      list.unshift({ seq, hash: hash || "", time });
+      if (list.length > MAX_CHAIN) list.length = MAX_CHAIN;
+    }
+    if (hash) {
+      const m = seqHashByNode.get(seq) || new Map();
+      m.set(name, hash);
+      seqHashByNode.set(seq, m);
+    }
+  }
 
   function pushTimelineEvents(nodes) {
     const now = new Date();
@@ -319,6 +345,7 @@
         row.byNode.set(n.name, diverged ? "diverged" : "match");
         row.hash = hashSeen;
         if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
+        pushNodeChain(n.name, v, n.validated_ledger.hash || "", now);
       }
       const c = n.closed_ledger?.seq;
       if (!v && c != null && prevClosedSeqs[n.name] !== c) {
@@ -458,6 +485,93 @@
     svg.innerHTML = html;
     for (const g of svg.querySelectorAll(".topo-node")) {
       g.addEventListener("click", () => setSelected(g.dataset.name));
+    }
+  });
+
+  // ── Chains render (per-client block history) ───────────────
+  // Strategy: for each node we keep up to MAX_CHAIN recent validated
+  // ledgers. A cell is "diverged" when its hash differs from the most
+  // common hash other nodes reported for the same seq. The tip cell is
+  // marked "tip" so the column header's lag readout makes sense at a
+  // glance. Clicking any cell jumps into the block details view.
+  function majorityHashFor(seq) {
+    const m = seqHashByNode.get(seq);
+    if (!m || m.size === 0) return null;
+    const counts = new Map();
+    for (const h of m.values()) counts.set(h, (counts.get(h) || 0) + 1);
+    let best = null, bestN = 0;
+    for (const [h, n] of counts) {
+      if (n > bestN) { best = h; bestN = n; }
+    }
+    return best;
+  }
+
+  store.subscribe((s) => {
+    const grid = document.getElementById("chains-grid");
+    const badge = document.getElementById("seg-chains-badge");
+    if (!grid) return;
+    const nodes = s.nodes || [];
+    if (!nodes.length) {
+      grid.innerHTML = `<div class="chain-empty">Waiting for nodes…</div>`;
+      if (badge) { badge.hidden = true; badge.textContent = ""; }
+      return;
+    }
+
+    const tips = nodes.map((n) => (nodeChains[n.name] || [])[0]?.seq || 0);
+    const maxTip = tips.length ? Math.max(...tips) : 0;
+
+    let divergedNodes = 0;
+    const cols = nodes.map((n) => {
+      const chain = nodeChains[n.name] || [];
+      const tipSeq = chain[0]?.seq || 0;
+      const lag = tipSeq && maxTip ? maxTip - tipSeq : 0;
+      const health = healthClass(n);
+      const sel = s.ui.selected === n.name ? "selected" : "";
+      let colHasDiverge = false;
+      const cells = chain.map((c, idx) => {
+        const majority = majorityHashFor(c.seq);
+        const diverged = c.hash && majority && c.hash !== majority;
+        if (diverged) colHasDiverge = true;
+        const cls = [diverged ? "diverged" : "", idx === 0 ? "tip" : ""].filter(Boolean).join(" ");
+        const title = c.hash ? `${c.hash}` : "";
+        return `<div class="chain-cell ${cls}" data-seq="${c.seq}" title="${escapeHTML(title)}">
+          <span class="chain-seq">${c.seq.toLocaleString("en-US")}</span>
+          <span class="chain-hash">${escapeHTML(shortHash(c.hash))}</span>
+        </div>`;
+      }).join("");
+      if (colHasDiverge) divergedNodes += 1;
+      const lagChip = lag > 0
+        ? `<span class="chain-lag" title="behind leader by ${lag} ledger${lag === 1 ? "" : "s"}">−${lag}</span>`
+        : tipSeq && tipSeq === maxTip ? `<span class="chain-tip-leader" title="at fleet leader tip">●</span>` : "";
+      return `<div class="chain-col ${sel}" data-name="${escapeHTML(n.name)}">
+        <header class="chain-head">
+          <span class="node-pip ${health}"></span>
+          <span class="chain-name">${escapeHTML(n.name)}</span>
+          ${lagChip}
+        </header>
+        <div class="chain-cells">${cells || `<div class="chain-empty">Waiting for ledger close…</div>`}</div>
+      </div>`;
+    }).join("");
+
+    grid.innerHTML = cols;
+    if (!grid.dataset.delegated) {
+      grid.addEventListener("click", (e) => {
+        const cell = e.target.closest(".chain-cell[data-seq]");
+        if (cell) { loadBlock(Number(cell.dataset.seq)); return; }
+        const col = e.target.closest(".chain-col[data-name]");
+        if (col) setSelected(col.dataset.name);
+      });
+      grid.dataset.delegated = "1";
+    }
+
+    if (badge) {
+      if (divergedNodes > 0) {
+        badge.textContent = `${divergedNodes} desync${divergedNodes === 1 ? "" : "ed"}`;
+        badge.hidden = false;
+      } else {
+        badge.hidden = true;
+        badge.textContent = "";
+      }
     }
   });
 
@@ -919,8 +1033,9 @@
 
     switch (e.key) {
       case "1": setView("timeline"); break;
-      case "2": setView("topology"); break;
-      case "3": setView("fuzzer"); break;
+      case "2": setView("chains"); break;
+      case "3": setView("topology"); break;
+      case "4": setView("fuzzer"); break;
       case "j": case "J": walkList(+1); break;
       case "k": case "K": walkList(-1); break;
       case "Enter": activateFocused(); break;
