@@ -56,6 +56,37 @@
         <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
 
+      <div class="view view-block" data-view="block">
+        <div class="view-controls block-controls">
+          <button class="block-back" id="block-back" title="Back to Timeline (esc)">← Timeline</button>
+          <span class="block-source" id="block-source"></span>
+        </div>
+        <h1 class="title">Block <span class="mono" id="block-seq">—</span>.</h1>
+        <p class="subtitle"><span class="mono" id="block-hash">—</span></p>
+        <div class="block-body" id="block-body">
+          <div class="block-empty" id="block-empty">Loading…</div>
+          <section class="block-section" id="block-fleet" hidden>
+            <h2 class="block-h2">Fleet agreement</h2>
+            <table class="block-table">
+              <thead><tr><th>Node</th><th>Hash</th><th>Status</th></tr></thead>
+              <tbody id="block-fleet-body"></tbody>
+            </table>
+          </section>
+          <section class="block-section" id="block-meta" hidden>
+            <h2 class="block-h2">Ledger header</h2>
+            <dl class="block-kv" id="block-meta-list"></dl>
+          </section>
+          <section class="block-section" id="block-txs" hidden>
+            <h2 class="block-h2">Transactions <span class="block-count" id="block-tx-count">0</span></h2>
+            <div class="block-tx-empty" id="block-tx-empty" hidden>No transactions in this ledger.</div>
+            <table class="block-table block-tx-table" id="block-tx-table" hidden>
+              <thead><tr><th>#</th><th>Type</th><th>Account</th><th>Destination</th><th>Amount</th><th>Hash</th></tr></thead>
+              <tbody id="block-tx-body"></tbody>
+            </table>
+          </section>
+        </div>
+      </div>
+
       <div class="view view-fuzzer" data-view="fuzzer">
         <h1 class="title">Fuzzer.</h1>
         <p class="subtitle">Seed <span id="fuzz-seed-inline" class="mono">—</span></p>
@@ -108,6 +139,7 @@
           <dt>esc</dt><dd>Clear filter → selection → collapse inspector</dd>
           <dt>space</dt><dd>Pause / resume</dd>
           <dt>n</dt><dd>Next divergence (Timeline)</dd>
+          <dt>enter</dt><dd>Open focused ledger details (Timeline)</dd>
           <dt>c</dt><dd>Copy focused log / state / row</dd>
           <dt>e</dt><dd>Expand / collapse inspector</dd>
           <dt>⌘K</dt><dd>Command palette</dd>

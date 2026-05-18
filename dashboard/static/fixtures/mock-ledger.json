@@ -1,0 +1,42 @@
+{
+  "source": "node-a",
+  "result": {
+    "validated": true,
+    "ledger_hash": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+    "ledger_index": 1234567,
+    "ledger": {
+      "ledger_index": "1234567",
+      "ledger_hash": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+      "parent_hash": "112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00",
+      "account_hash": "AAAA1111BBBB2222CCCC3333DDDD4444EEEE5555FFFF66667777888899990000",
+      "transaction_hash": "FFEEDDCCBBAA99887766554433221100FFEEDDCCBBAA99887766554433221100",
+      "close_time": 802100000,
+      "close_time_human": "2025-Mar-31 12:00:00 UTC",
+      "close_flags": 0,
+      "close_time_resolution": 10,
+      "parent_close_time": 802099990,
+      "total_coins": "99999999999999990",
+      "transactions": [
+        {
+          "TransactionType": "Payment",
+          "Account": "rGvA8oM1nQGZWeUEHM9z2Y7sB48zo3vP3p",
+          "Destination": "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
+          "Amount": "10000000",
+          "hash": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "TransactionType": "OfferCreate",
+          "Account": "rUsrM7K1A8dwHc9YfWnxQ4bC8c3K9PqA9D",
+          "Amount": "5000000",
+          "hash": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "TransactionType": "TrustSet",
+          "Account": "rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH",
+          "Destination": "",
+          "hash": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ]
+    }
+  }
+}

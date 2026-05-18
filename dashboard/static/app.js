@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const VIEWS = ["timeline", "topology", "fuzzer"];
+  const VIEWS = ["timeline", "topology", "fuzzer", "block"];
+  const NAV_VIEWS = ["timeline", "topology", "fuzzer"];
   const PANES = ["rail", "main", "inspector"];
   const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
@@ -23,6 +24,7 @@
     nodes: [],
     fuzz: null,
     logs: {},
+    block: { seq: null, data: null, loading: false, error: null, source: null },
     lastUpdate: 0,
     pendingUpdates: 0,
     sync: "connecting",
@@ -49,11 +51,14 @@
     const [path, query] = raw.split("?");
     const view = VIEWS.includes(path) ? path : "timeline";
     const params = new URLSearchParams(query || "");
+    const seqRaw = params.get("seq");
+    const blockSeq = seqRaw && /^\d+$/.test(seqRaw) ? Number(seqRaw) : null;
     return {
       view,
       selected: params.get("node") || null,
       onlyDivergences: params.get("only") === "diverged",
       timelineQuery: params.get("q") || "",
+      blockSeq,
     };
   }
 
@@ -63,6 +68,7 @@
     if (s.ui.selected) params.set("node", s.ui.selected);
     if (s.ui.filters.onlyDivergences) params.set("only", "diverged");
     if (s.ui.filters.timeline) params.set("q", s.ui.filters.timeline);
+    if (s.ui.view === "block" && s.block.seq != null) params.set("seq", String(s.block.seq));
     const q = params.toString();
     const target = `#/${s.ui.view}${q ? `?${q}` : ""}`;
     if (location.hash !== target) history.replaceState(null, "", target);
@@ -72,11 +78,19 @@
     const h = parseHash();
     store.setUI({ view: h.view, selected: h.selected });
     store.setFilter({ onlyDivergences: h.onlyDivergences, timeline: h.timelineQuery });
+    if (h.view === "block" && h.blockSeq != null && store.get().block.seq !== h.blockSeq) {
+      loadBlock(h.blockSeq);
+    }
   }
 
   // ── Mutators ────────────────────────────────────────────────
   function setView(view) {
     if (!VIEWS.includes(view)) view = "timeline";
+    // Leaving the block sub-route via the main nav clears the loaded block
+    // so the URL doesn't carry a stale `seq` while showing another view.
+    if (view !== "block" && store.get().ui.view === "block") {
+      store.set({ block: { seq: null, data: null, loading: false, error: null, source: null } });
+    }
     store.setUI({ view });
     pushHash();
   }
@@ -95,6 +109,31 @@
     if (!PANES.includes(pane)) return;
     if (store.get().ui.activePane === pane) return;
     store.setUI({ activePane: pane });
+  }
+
+  async function loadBlock(seq) {
+    seq = Number(seq);
+    if (!Number.isInteger(seq) || seq <= 0) return;
+    store.set({ block: { seq, data: null, loading: true, error: null, source: null } });
+    store.setUI({ view: "block" });
+    pushHash();
+    try {
+      const url = MOCK ? "/fixtures/mock-ledger.json" : `/api/ledger/${seq}`;
+      const data = await fetchJSON(url);
+      if (data && data.result) {
+        store.set({ block: { seq, data: data.result, loading: false, error: null, source: data.source || null } });
+      } else {
+        store.set({ block: { seq, data: null, loading: false, error: (data && data.error) || "Unknown response", source: null } });
+      }
+    } catch (e) {
+      store.set({ block: { seq, data: null, loading: false, error: e.message, source: null } });
+    }
+  }
+
+  function exitBlock() {
+    store.set({ block: { seq: null, data: null, loading: false, error: null, source: null } });
+    store.setUI({ view: "timeline" });
+    pushHash();
   }
 
   // ── Data layer ──────────────────────────────────────────────
@@ -165,8 +204,11 @@
 
   // ── View switcher subscriber ────────────────────────────────
   store.subscribe((s) => {
+    // The Block view is a sub-route of Timeline — keep the Timeline tab lit
+    // while it's open so the nav still tells the user where they are.
+    const navView = s.ui.view === "block" ? "timeline" : s.ui.view;
     for (const seg of document.querySelectorAll(".seg")) {
-      seg.classList.toggle("active", seg.dataset.view === s.ui.view);
+      seg.classList.toggle("active", seg.dataset.view === navView);
     }
     for (const v of document.querySelectorAll(".view")) {
       v.classList.toggle("active", v.dataset.view === s.ui.view);
@@ -182,6 +224,7 @@
     const age = s.lastUpdate ? Math.max(0, Math.round((Date.now() - s.lastUpdate) / 1000)) : null;
     const parts = [];
     if (s.ui.view === "fuzzer" && s.fuzz) parts.push(`seed #${s.fuzz.current_seed}`);
+    else if (s.ui.view === "block" && s.block.seq != null) parts.push(`block #${s.block.seq.toLocaleString("en-US")}`);
     else if (maxSeq) parts.push(`seq ${maxSeq.toLocaleString("en-US")}`);
     if (age != null) parts.push(`${age}s ago`);
     ctx.textContent = parts.length ? `· ${parts.join(" · ")}` : "—";
@@ -334,7 +377,7 @@
         }).join("");
         const divClass = rowDiverged(row) ? "diverged" : "";
         return `<div class="timeline-row ${divClass}" data-seq="${seq}">
-          <div class="timeline-seq">${seq.toLocaleString("en-US")}</div>
+          <div class="timeline-seq" data-seq="${seq}" title="Open block details">${seq.toLocaleString("en-US")}</div>
           <div class="timeline-rule"></div>
           <div class="timeline-meta">
             <span>${time}</span>
@@ -347,6 +390,10 @@
       // Wire per-dot click → select that node
       for (const dot of list.querySelectorAll(".timeline-dots span[data-name]")) {
         dot.addEventListener("click", (e) => { e.stopPropagation(); setSelected(dot.dataset.name); });
+      }
+      // Wire seq click → open block details
+      for (const seqEl of list.querySelectorAll(".timeline-seq[data-seq]")) {
+        seqEl.addEventListener("click", (e) => { e.stopPropagation(); loadBlock(Number(seqEl.dataset.seq)); });
       }
 
       if (timelinePinned && pendingNew > 0) {
@@ -412,6 +459,161 @@
     for (const g of svg.querySelectorAll(".topo-node")) {
       g.addEventListener("click", () => setSelected(g.dataset.name));
     }
+  });
+
+  // ── Block (ledger) render ───────────────────────────────────
+  function fmtAmount(amt) {
+    if (amt == null) return "";
+    if (typeof amt === "string") {
+      // Drops → XRP (drops are integer strings)
+      if (/^\d+$/.test(amt)) {
+        const drops = BigInt(amt);
+        const whole = drops / 1000000n;
+        const frac = drops % 1000000n;
+        const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+        return `${whole.toString()}${fracStr ? "." + fracStr : ""} XRP`;
+      }
+      return amt;
+    }
+    if (typeof amt === "object" && amt.value) {
+      return `${amt.value} ${amt.currency || ""}`.trim() + (amt.issuer ? ` · ${amt.issuer.slice(0, 8)}…` : "");
+    }
+    return String(amt);
+  }
+
+  function escapeHTML(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+
+  function shortHash(h) {
+    if (!h) return "";
+    return h.length > 18 ? h.slice(0, 8) + "…" + h.slice(-6) : h;
+  }
+
+  // Best-effort close_time → ISO string. XRPL close_time is seconds since
+  // the Ripple epoch (2000-01-01T00:00:00Z), 946684800 unix.
+  function fmtCloseTime(ledger) {
+    if (ledger.close_time_human) return ledger.close_time_human;
+    if (typeof ledger.close_time === "number") {
+      const unix = (ledger.close_time + 946684800) * 1000;
+      return new Date(unix).toISOString().replace("T", " ").replace("Z", " UTC");
+    }
+    return "";
+  }
+
+  store.subscribe((s) => {
+    if (s.ui.view !== "block") return;
+    const seqEl = document.getElementById("block-seq");
+    const hashEl = document.getElementById("block-hash");
+    const empty = document.getElementById("block-empty");
+    const fleet = document.getElementById("block-fleet");
+    const meta = document.getElementById("block-meta");
+    const txs = document.getElementById("block-txs");
+    const source = document.getElementById("block-source");
+    if (!seqEl) return;
+
+    seqEl.textContent = s.block.seq != null ? `#${s.block.seq.toLocaleString("en-US")}` : "—";
+    source.textContent = s.block.source ? `via ${s.block.source}` : "";
+
+    if (s.block.loading) {
+      empty.hidden = false;
+      empty.textContent = "Loading…";
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    if (s.block.error) {
+      empty.hidden = false;
+      empty.textContent = `Failed to load ledger: ${s.block.error}`;
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    const result = s.block.data;
+    if (!result || !(result.ledger || result.ledger_hash)) {
+      empty.hidden = false;
+      empty.textContent = "No ledger data.";
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+
+    const ledger = result.ledger || {};
+    const ledgerHash = result.ledger_hash || ledger.ledger_hash || ledger.hash || "";
+    hashEl.textContent = ledgerHash || "—";
+
+    // Fleet agreement — uses local close-row data captured from the live stream
+    const row = closeRows.get(s.block.seq);
+    const nodeNames = (s.nodes || []).map((n) => n.name);
+    const fleetBody = document.getElementById("block-fleet-body");
+    if (row && nodeNames.length) {
+      fleet.hidden = false;
+      const localHash = row.hash || ledgerHash;
+      fleetBody.innerHTML = nodeNames.map((name) => {
+        const status = row.byNode.get(name);
+        let label = "missing";
+        let cls = "block-status-missing";
+        if (status === "match") { label = "match"; cls = "block-status-match"; }
+        else if (status === "diverged") { label = "diverged"; cls = "block-status-diverged"; }
+        return `<tr class="${status === "diverged" ? "diverged" : ""}">
+          <td>${escapeHTML(name)}</td>
+          <td>${escapeHTML(shortHash(localHash))}</td>
+          <td class="${cls}">${label}</td>
+        </tr>`;
+      }).join("");
+    } else {
+      fleet.hidden = true;
+    }
+
+    // Ledger header
+    const metaPairs = [
+      ["Ledger index", ledger.ledger_index || result.ledger_index || s.block.seq],
+      ["Ledger hash", ledgerHash],
+      ["Parent hash", ledger.parent_hash],
+      ["Account state hash", ledger.account_hash],
+      ["Transaction hash", ledger.transaction_hash],
+      ["Close time", fmtCloseTime(ledger)],
+      ["Close flags", ledger.close_flags != null ? String(ledger.close_flags) : ""],
+      ["Close time resolution", ledger.close_time_resolution != null ? String(ledger.close_time_resolution) : ""],
+      ["Parent close time", ledger.parent_close_time != null ? String(ledger.parent_close_time) : ""],
+      ["Total coins", ledger.total_coins ? fmtAmount(ledger.total_coins) : ""],
+      ["Validated", String(Boolean(result.validated))],
+    ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+    document.getElementById("block-meta-list").innerHTML = metaPairs.map(
+      ([k, v]) => `<dt>${escapeHTML(k)}</dt><dd>${escapeHTML(v)}</dd>`
+    ).join("");
+    meta.hidden = false;
+
+    // Transactions
+    const txList = Array.isArray(ledger.transactions) ? ledger.transactions : [];
+    document.getElementById("block-tx-count").textContent = txList.length;
+    const txEmpty = document.getElementById("block-tx-empty");
+    const txTable = document.getElementById("block-tx-table");
+    const txBody = document.getElementById("block-tx-body");
+    if (!txList.length) {
+      txEmpty.hidden = false;
+      txTable.hidden = true;
+    } else {
+      txEmpty.hidden = true;
+      txTable.hidden = false;
+      txBody.innerHTML = txList.map((tx, i) => {
+        // With expand:true, each entry can be an object with the tx fields
+        // (and optionally a `metaData` sibling), or a bare hash string when
+        // the node doesn't honor expand.
+        const t = typeof tx === "string" ? { hash: tx } : tx;
+        const hash = t.hash || t.tx_hash || (t.metaData && t.metaData.TransactionResult ? "" : "") || "";
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${escapeHTML(t.TransactionType || "—")}</td>
+          <td>${escapeHTML(t.Account || "")}</td>
+          <td>${escapeHTML(t.Destination || "")}</td>
+          <td>${escapeHTML(fmtAmount(t.Amount || t.DeliverMax))}</td>
+          <td title="${escapeHTML(hash)}">${escapeHTML(shortHash(hash))}</td>
+        </tr>`;
+      }).join("");
+    }
+    txs.hidden = false;
   });
 
   // ── Fuzzer render ───────────────────────────────────────────
@@ -651,6 +853,10 @@
       const rows = document.querySelectorAll(".node-row");
       const r = rows[railFocusIdx];
       if (r) setSelected(r.dataset.name);
+    } else if (pane === "main" && store.get().ui.view === "timeline") {
+      const rows = document.querySelectorAll(".timeline-row");
+      const r = rows[timelineFocusIdx];
+      if (r && r.dataset.seq) loadBlock(Number(r.dataset.seq));
     } else if (pane === "inspector") {
       const cb = document.getElementById("log-follow");
       cb.checked = !cb.checked;
@@ -703,6 +909,7 @@
         if (e.target.id === "log-filter") { store.setFilter({ logs: "" }); e.target.value = ""; }
         return;
       }
+      if (store.get().ui.view === "block") { exitBlock(); return; }
       if (store.get().ui.selected) { setSelected(null); return; }
       return;
     }
@@ -833,6 +1040,9 @@
         store.set({}); // trigger re-render
       });
     });
+    // Block view back button
+    document.getElementById("block-back").addEventListener("click", () => exitBlock());
+
     // Inspector clear
     document.getElementById("inspector-clear").addEventListener("click", () => setSelected(null));
     document.getElementById("inspector-expand").addEventListener("click", () => {
