@@ -72,6 +72,8 @@ func TestSetupState_SubmitsMeshAndIOUFunding(t *testing.T) {
 	orig := setupPollInterval
 	setupPollInterval = 1 * time.Millisecond
 	defer func() { setupPollInterval = orig }()
+	defer func(prev time.Duration) { SetupSubmitInterval = prev }(SetupSubmitInterval)
+	SetupSubmitInterval = 0
 
 	if err := SetupState(client, pool); err != nil {
 		t.Fatalf("SetupState: %v", err)
@@ -120,6 +122,8 @@ func TestSetupState_FailsOnNonSuccess(t *testing.T) {
 	orig := setupPollInterval
 	setupPollInterval = 1 * time.Millisecond
 	defer func() { setupPollInterval = orig }()
+	defer func(prev time.Duration) { SetupSubmitInterval = prev }(SetupSubmitInterval)
+	SetupSubmitInterval = 0
 
 	if err := SetupState(client, pool); err == nil {
 		t.Fatal("expected error on tecNO_LINE, got nil")
