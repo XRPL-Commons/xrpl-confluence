@@ -1118,54 +1118,76 @@
     });
   });
 
-  // ── Fleet rail resize ───────────────────────────────────────
-  const RAIL_MIN = 80;
-  const RAIL_MAX = 480;
-  const RAIL_DEFAULT = 220;
-  const RAIL_STORAGE_KEY = "wb:rail-w";
+  // ── Rail resize (Fleet + Inspector) ─────────────────────────
+  // The two side rails share the same drag-handle pattern. `edge` is
+  // which border of the target panel the handle sits on — for the left
+  // Fleet rail the handle is on the right edge so moving right grows
+  // the rail; for the right Inspector it's mirrored.
+  function setupResizable({ handleId, panelId, cssVar, storageKey, defaultPx, minPx, maxPx, edge, bodyClass }) {
+    const apply = (px) => {
+      const clamped = Math.max(minPx, Math.min(maxPx, Math.round(px)));
+      document.documentElement.style.setProperty(cssVar, clamped + "px");
+      return clamped;
+    };
 
-  function applyRailWidth(px) {
-    const clamped = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(px)));
-    document.documentElement.style.setProperty("--rail-w", clamped + "px");
-    return clamped;
-  }
+    const stored = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(stored) && stored >= minPx && stored <= maxPx) apply(stored);
 
-  function setupRailResize() {
-    // Restore persisted width.
-    const stored = Number(localStorage.getItem(RAIL_STORAGE_KEY));
-    if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) {
-      applyRailWidth(stored);
-    }
-    const handle = document.getElementById("rail-resize");
+    const handle = document.getElementById(handleId);
     if (!handle) return;
 
     let dragging = false;
     const onMove = (e) => {
       if (!dragging) return;
-      // The rail's left edge sits at the workbench's left padding (the
-      // body has 24px padding, the workbench border adds 1px). We can
-      // get its actual left from the bounding rect instead of guessing.
-      const railRect = document.getElementById("rail-nodes").getBoundingClientRect();
-      const w = applyRailWidth(e.clientX - railRect.left);
-      try { localStorage.setItem(RAIL_STORAGE_KEY, String(w)); } catch {}
+      const rect = document.getElementById(panelId).getBoundingClientRect();
+      // Left-edge handle on the right-side panel: width = panel.right - cursor.
+      // Right-edge handle on the left-side panel: width = cursor - panel.left.
+      const px = edge === "left" ? rect.right - e.clientX : e.clientX - rect.left;
+      const w = apply(px);
+      try { localStorage.setItem(storageKey, String(w)); } catch {}
     };
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
-      document.body.classList.remove("resizing-rail");
+      document.body.classList.remove(bodyClass);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
     handle.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       dragging = true;
-      document.body.classList.add("resizing-rail");
+      document.body.classList.add(bodyClass);
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     });
     handle.addEventListener("dblclick", () => {
-      applyRailWidth(RAIL_DEFAULT);
-      try { localStorage.removeItem(RAIL_STORAGE_KEY); } catch {}
+      apply(defaultPx);
+      try { localStorage.removeItem(storageKey); } catch {}
+    });
+  }
+
+  function setupRailResize() {
+    setupResizable({
+      handleId: "rail-resize",
+      panelId: "rail-nodes",
+      cssVar: "--rail-w",
+      storageKey: "wb:rail-w",
+      defaultPx: 220,
+      minPx: 80,
+      maxPx: 480,
+      edge: "right",
+      bodyClass: "resizing-rail",
+    });
+    setupResizable({
+      handleId: "inspector-resize",
+      panelId: "inspector",
+      cssVar: "--inspector-w",
+      storageKey: "wb:inspector-w",
+      defaultPx: 420,
+      minPx: 120,
+      maxPx: 720,
+      edge: "left",
+      bodyClass: "resizing-inspector",
     });
   }
 

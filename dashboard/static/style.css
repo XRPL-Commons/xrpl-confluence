@@ -205,7 +205,11 @@ body.resizing-rail * { cursor: col-resize !important; }
 .layers tbody tr.crashed td:first-child { border-left: 2px solid var(--red); padding-left: 10px; }
 
 /* Inspector */
-.rail-inspector { grid-area: inspector; border-left: 1px solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.rail-inspector { grid-area: inspector; border-left: 1px solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
+.inspector-resize { position: absolute; top: 0; left: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 5; background: transparent; }
+.inspector-resize:hover, body.resizing-inspector .inspector-resize { background: var(--cobalt); opacity: 0.5; }
+body.resizing-inspector { cursor: col-resize; user-select: none; }
+body.resizing-inspector * { cursor: col-resize !important; }
 .rail-inspector.collapsed { width: 24px; --inspector-w: 24px; }
 .inspector-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
 .inspector-title { font: 500 14px/1 var(--serif); letter-spacing: -0.01em; }
