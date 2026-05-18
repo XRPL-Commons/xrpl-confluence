@@ -1118,6 +1118,57 @@
     });
   });
 
+  // ── Fleet rail resize ───────────────────────────────────────
+  const RAIL_MIN = 80;
+  const RAIL_MAX = 480;
+  const RAIL_DEFAULT = 220;
+  const RAIL_STORAGE_KEY = "wb:rail-w";
+
+  function applyRailWidth(px) {
+    const clamped = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(px)));
+    document.documentElement.style.setProperty("--rail-w", clamped + "px");
+    return clamped;
+  }
+
+  function setupRailResize() {
+    // Restore persisted width.
+    const stored = Number(localStorage.getItem(RAIL_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) {
+      applyRailWidth(stored);
+    }
+    const handle = document.getElementById("rail-resize");
+    if (!handle) return;
+
+    let dragging = false;
+    const onMove = (e) => {
+      if (!dragging) return;
+      // The rail's left edge sits at the workbench's left padding (the
+      // body has 24px padding, the workbench border adds 1px). We can
+      // get its actual left from the bounding rect instead of guessing.
+      const railRect = document.getElementById("rail-nodes").getBoundingClientRect();
+      const w = applyRailWidth(e.clientX - railRect.left);
+      try { localStorage.setItem(RAIL_STORAGE_KEY, String(w)); } catch {}
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("resizing-rail");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.body.classList.add("resizing-rail");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+    handle.addEventListener("dblclick", () => {
+      applyRailWidth(RAIL_DEFAULT);
+      try { localStorage.removeItem(RAIL_STORAGE_KEY); } catch {}
+    });
+  }
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
@@ -1157,6 +1208,11 @@
     });
     // Block view back button
     document.getElementById("block-back").addEventListener("click", () => exitBlock());
+
+    // Fleet rail resize — drag the splitter on the rail's right edge to
+    // shrink/grow the Fleet column. Width persists across reloads. The
+    // CSS variable lives on :root, matching the default in style.css.
+    setupRailResize();
 
     // Inspector clear
     document.getElementById("inspector-clear").addEventListener("click", () => setSelected(null));

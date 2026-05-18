@@ -55,7 +55,11 @@ body { padding: 24px; }
 .topbar-ctx { font: italic 12px/1 var(--serif); color: var(--mid); }
 
 /* Rail (nodes) */
-.rail-nodes { grid-area: rail; border-right: 1px solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.rail-nodes { grid-area: rail; border-right: 1px solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; position: relative; }
+.rail-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 5; background: transparent; }
+.rail-resize:hover, body.resizing-rail .rail-resize { background: var(--cobalt); opacity: 0.5; }
+body.resizing-rail { cursor: col-resize; user-select: none; }
+body.resizing-rail * { cursor: col-resize !important; }
 .rail-head { padding: 14px 14px 10px; }
 .rail-label { font: 500 11px/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; display: block; margin-bottom: 8px; }
 .rail-filter { width: 100%; border: none; border-bottom: 1px solid var(--rule); padding: 4px 0; font: 13px/1 var(--sans); background: transparent; outline: none; }
