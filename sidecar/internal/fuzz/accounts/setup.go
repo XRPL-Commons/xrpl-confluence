@@ -28,6 +28,13 @@ var (
 	SetupMaxRetries = 30
 	// SetupRetryDelay is the wait between retries for transient errors.
 	SetupRetryDelay = 3 * time.Second
+	// SetupSubmitInterval throttles back-to-back submissions during the
+	// setup phase. Without it, a dense pool (n=50 → 4900 txs) saturates the
+	// submit node's open-ledger queue faster than it can drain, and the
+	// retrySubmit loop eventually surrenders even though the network is
+	// healthy. 25ms ≈ 40 tx/s sits comfortably below rippled's default
+	// open-ledger queue ingestion rate; tests reset it to 0.
+	SetupSubmitInterval = 25 * time.Millisecond
 )
 
 // SetupState seeds a dense trust-line + IOU-balance mesh between every pair
@@ -51,11 +58,16 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 	}
 
 	// Phase 1: trust-line mesh.
+	first := true
 	for i := 0; i < n; i++ {
 		for j := 0; j < n; j++ {
 			if i == j {
 				continue
 			}
+			if !first && SetupSubmitInterval > 0 {
+				time.Sleep(SetupSubmitInterval)
+			}
+			first = false
 			if err := retrySubmit(SetupMaxRetries, func() (*rpcclient.SubmitResult, error) {
 				return client.SubmitTrustSet(
 					wallets[i].Seed,
@@ -75,11 +87,16 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 	}
 
 	// Phase 2: IOU funding. Issuer wallet[j] sends USD to holder wallet[i].
+	first = true
 	for i := 0; i < n; i++ {
 		for j := 0; j < n; j++ {
 			if i == j {
 				continue
 			}
+			if !first && SetupSubmitInterval > 0 {
+				time.Sleep(SetupSubmitInterval)
+			}
+			first = false
 			amount := map[string]any{
 				"currency": SetupCurrency,
 				"issuer":   wallets[j].ClassicAddress,
