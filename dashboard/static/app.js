@@ -303,7 +303,7 @@
 
   // ── Timeline state ──────────────────────────────────────────
   const MAX_TIMELINE = 80;
-  const MAX_CHAIN = 60;
+  const MAX_CHAIN = 25;
   const prevValidatedSeqs = {};
   const prevClosedSeqs = {};
   const closeRows = new Map(); // seq → { time, hash, byNode: Map }
