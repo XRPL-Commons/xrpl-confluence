@@ -26,6 +26,9 @@ func main() {
 	logsDir := flag.String("logs-dir", "/var/confluence/logs", "directory containing per-node log files")
 	scenariosDir := flag.String("scenarios-dir", "/etc/confluence/scenarios", "directory containing built-in scenario YAML files")
 	reproducersDir := flag.String("reproducers-dir", "/var/confluence/reproducers", "directory where reproducer scenario YAMLs are written")
+	stallGap := flag.Int("stall-gap-threshold", 10, "closed_seq - validated_seq above this counts as a stall sample")
+	stallSustain := flag.Duration("stall-sustain", 2*time.Minute, "consensus_stall fires when the stall sample persists at least this long")
+	stallInterval := flag.Duration("stall-poll-interval", 5*time.Second, "how often the consensus_progress oracle inspects node snapshots")
 	flag.Parse()
 
 	if err := os.MkdirAll(*findingsDir, 0o755); err != nil {
@@ -77,8 +80,16 @@ func main() {
 		poller.Start(ctx)
 		opts = append(opts, server.WithNodePoller(poller))
 
-		oracle := finding.NewDivergenceOracle(poller, findingStore, 2*time.Second)
+		oracle := finding.NewDivergenceOracle(poller, findingStore, 2*time.Second).
+			WithLedgerFetcher(server.NewRPCLedgerFetcher(file.Nodes))
 		oracle.Start(ctx)
+
+		// consensus_progress: fires consensus_stall when nodes keep closing
+		// fresh ledgers but never advance their validated marker. Closes the
+		// blind spot left by state_diff, which only ticks once validated_seq
+		// advances and stays silent when consensus never converges.
+		stallOracle := finding.NewConsensusProgressOracle(poller, findingStore, *stallInterval, *stallGap, *stallSustain)
+		stallOracle.Start(ctx)
 	}
 
 	confSrv := server.New(opts...)
