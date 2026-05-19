@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -32,6 +33,13 @@ func newRunCmdWith(up *upDeps, down *downDeps) *cobra.Command {
 	cmd.Flags().Bool("tear-down-first", true, "Tear down any existing enclave with the same name before booting")
 	cmd.Flags().Duration("wait-control", 60*time.Second, "How long to wait for control service to become healthy")
 	cmd.Flags().String("package", ".", "Kurtosis package dir")
+	cmd.Flags().Duration("boot-hang-threshold", 90*time.Second, "Kill the kurtosis CLI if it stays silent this long (0 disables)")
+	cmd.Flags().String("rebuild-goxrpl", "", "docker build this dir and tag it with the scenario's goxrpl image before booting")
+	cmd.Flags().String("rebuild-rippled", "", "docker build this dir and tag it with the scenario's rippled image before booting")
+	cmd.Flags().Bool("with-dashboard", false, "Force the grafana observability sidecar on regardless of the scenario YAML")
+	cmd.Flags().Duration("budget", 0, "Override the scenario's budget.duration (e.g. 8h for overnight)")
+	cmd.Flags().Bool("resume-on-finding", false, "After a stop_on-triggered finding, relaunch the run until --budget elapses")
+	cmd.Flags().String("rotate-logs", "", "Stream per-node kurtosis logs to this directory and rotate them; useful for overnight runs")
 	return cmd
 }
 
@@ -56,6 +64,21 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	waitControl, _ := cmd.Flags().GetDuration("wait-control")
 	packageDir, _ := cmd.Flags().GetString("package")
 	timeoutFlag, _ := cmd.Flags().GetDuration("timeout")
+	bootHang, _ := cmd.Flags().GetDuration("boot-hang-threshold")
+	rebuildGoXRPL, _ := cmd.Flags().GetString("rebuild-goxrpl")
+	rebuildRippled, _ := cmd.Flags().GetString("rebuild-rippled")
+	withDashboard, _ := cmd.Flags().GetBool("with-dashboard")
+	budgetOverride, _ := cmd.Flags().GetDuration("budget")
+	resumeOnFinding, _ := cmd.Flags().GetBool("resume-on-finding")
+	rotateLogsDir, _ := cmd.Flags().GetString("rotate-logs")
+
+	// Mirror the override into the in-memory scenario used for the timeout
+	// computation below; the boot path will reapply it after re-loading the
+	// scenario from disk so the compiled args + control service see the
+	// override too.
+	if budgetOverride > 0 {
+		s.Budget.Duration = budgetOverride.String()
+	}
 
 	hardTimeout := timeoutFlag
 	if hardTimeout == 0 {
@@ -73,10 +96,36 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	ctx, cancel := context.WithTimeout(rootCtx, hardTimeout)
 	defer cancel()
 
+	bootOpts := bootOptions{
+		ScenarioPath:      scenarioPath,
+		PackageDir:        packageDir,
+		TearDownFirst:     tearDownFirst,
+		WaitControl:       waitControl,
+		BootHangThreshold: bootHang,
+		RebuildGoXRPL:     rebuildGoXRPL,
+		RebuildRippled:    rebuildRippled,
+		WithDashboard:     withDashboard,
+		BudgetOverride:    budgetOverride,
+	}
+
 	// Boot the enclave.
-	cur, err := up.boot(ctx, cmd, scenarioPath, "", packageDir, tearDownFirst, waitControl)
+	cur, err := up.boot(ctx, cmd, bootOpts)
 	if err != nil {
 		return err
+	}
+
+	// Optional per-enclave kurtosis log rotation — useful for overnight runs
+	// where the in-container ring buffer is too small to survive a crash
+	// post-mortem. The streamer is best-effort; failures are logged but
+	// don't fail the run.
+	var stopLogs func()
+	if rotateLogsDir != "" {
+		stopLogs = startLogRotator(ctx, up.cli, cmd.ErrOrStderr(), cur.EnclaveID, rotateLogsDir)
+		defer func() {
+			if stopLogs != nil {
+				stopLogs()
+			}
+		}()
 	}
 
 	// Reuse upDeps' HTTP client so that tests can inject a redirect transport.
@@ -94,11 +143,37 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 
 	startTime := time.Now()
 
-	// Wait loop.
+	// Wait loop. When --resume-on-finding is set, a stop_on-triggered run is
+	// restarted in place so the harness keeps producing findings until the
+	// outer budget elapses — the use case is overnight fuzzing where you
+	// want to collect more than one failure per session without babysitting.
 	if waitFlag {
 		run, err = pollRun(ctx, cmd, c, run)
 		if err != nil {
 			return err
+		}
+		for resumeOnFinding && run.Status == server.RunStatusCompletedStopOn && ctx.Err() == nil {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"resume-on-finding: stop_on tripped (trigger %s); relaunching run...\n",
+				run.TriggerFinding)
+			next, sErr := c.StartRun(ctx, s)
+			if sErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "resume-on-finding: relaunch failed: %v\n", sErr)
+				break
+			}
+			next, err = pollRun(ctx, cmd, c, next)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					// Budget elapsed during this iteration — keep the most
+					// recent run for reporting, but don't surface the timeout
+					// as a fatal error; that's the expected end state.
+					run = next
+					err = nil
+					break
+				}
+				return err
+			}
+			run = next
 		}
 	}
 

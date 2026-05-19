@@ -181,6 +181,108 @@ func (c *Client) Ledger(seq int) (*LedgerResult, error) {
 	}, nil
 }
 
+// LedgerTransaction is a single tx entry inside a LedgerWithTxs snapshot.
+type LedgerTransaction struct {
+	Hash            string          `json:"hash"`
+	TransactionType string          `json:"transaction_type"`
+	Account         string          `json:"account,omitempty"`
+	Meta            json.RawMessage `json:"meta,omitempty"` // full meta blob with AffectedNodes
+}
+
+// LedgerWithTxs holds a ledger header + its full expanded transaction set.
+// Used by the divergence oracle to snapshot both sides of a hash mismatch at
+// SLE granularity (tx list + per-tx affected-state diff).
+type LedgerWithTxs struct {
+	Seq             int
+	LedgerHash      string
+	AccountHash     string
+	TransactionHash string
+	CloseTime       int
+	Transactions    []LedgerTransaction
+}
+
+// LedgerWithTxs calls `ledger` with transactions+expand to retrieve every tx
+// committed at the given seq, including per-tx meta. This is the raw material
+// the divergence oracle needs to compute a tx-set diff and label suspect
+// transaction types when two nodes disagree on a validated ledger.
+func (c *Client) LedgerWithTxs(seq int) (*LedgerWithTxs, error) {
+	raw, err := c.Call("ledger", map[string]interface{}{
+		"ledger_index": seq,
+		"transactions": true,
+		"expand":       true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var wrapper struct {
+		Ledger struct {
+			LedgerHash      string          `json:"ledger_hash"`
+			AccountHash     string          `json:"account_hash"`
+			TransactionHash string          `json:"transaction_hash"`
+			CloseTime       int             `json:"close_time"`
+			Transactions    json.RawMessage `json:"transactions"`
+		} `json:"ledger"`
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse ledger: %w", err)
+	}
+	if wrapper.Status == "error" || wrapper.Error != "" {
+		code := wrapper.Error
+		if code == "" {
+			code = "error"
+		}
+		return nil, fmt.Errorf("ledger %d: %s", seq, code)
+	}
+
+	out := &LedgerWithTxs{
+		Seq:             seq,
+		LedgerHash:      wrapper.Ledger.LedgerHash,
+		AccountHash:     wrapper.Ledger.AccountHash,
+		TransactionHash: wrapper.Ledger.TransactionHash,
+		CloseTime:       wrapper.Ledger.CloseTime,
+	}
+
+	// rippled returns transactions either as ["hash", ...] when expand=false
+	// or as [{...full tx...}, ...] when expand=true. Try the rich shape first,
+	// fall back to the hash-only shape for older nodes that ignore the flag.
+	var rich []struct {
+		Hash            string          `json:"hash"`
+		TransactionType string          `json:"TransactionType"`
+		Account         string          `json:"Account"`
+		Metadata        json.RawMessage `json:"metaData"`
+		Meta            json.RawMessage `json:"meta"`
+	}
+	if err := json.Unmarshal(wrapper.Ledger.Transactions, &rich); err == nil {
+		for _, t := range rich {
+			meta := t.Metadata
+			if len(meta) == 0 {
+				meta = t.Meta
+			}
+			out.Transactions = append(out.Transactions, LedgerTransaction{
+				Hash:            t.Hash,
+				TransactionType: t.TransactionType,
+				Account:         t.Account,
+				Meta:            meta,
+			})
+		}
+		return out, nil
+	}
+	// Fallback: bare hash list.
+	var hashes []string
+	if err := json.Unmarshal(wrapper.Ledger.Transactions, &hashes); err == nil {
+		for _, h := range hashes {
+			out.Transactions = append(out.Transactions, LedgerTransaction{Hash: h})
+		}
+		return out, nil
+	}
+	// Nothing parsed — treat as empty tx set rather than erroring; the diff
+	// machinery still has the root hashes to compare.
+	return out, nil
+}
+
 // SubmitResult holds the result of a transaction submission.
 type SubmitResult struct {
 	EngineResult        string

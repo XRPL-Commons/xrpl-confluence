@@ -2,6 +2,7 @@ package finding
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -29,10 +30,17 @@ type Snapshotter interface {
 // DivergenceOracle ticks on a fixed interval, inspects the current node
 // snapshot, and emits a finding whenever two or more nodes disagree on the
 // validated-ledger hash for the same sequence number.
+//
+// When a LedgerFetcher is configured (WithLedgerFetcher), the oracle also
+// snapshots both ledgers at the divergent seq and attaches a structured diff
+// (tx-set delta, suspect transaction types, per-node root hashes) as the
+// finding's Detail. This is what removes the "go grep kurtosis logs by hand"
+// step on every divergence.
 type DivergenceOracle struct {
 	snapshotter Snapshotter
 	store       *Store
 	interval    time.Duration
+	fetcher     LedgerFetcher
 
 	mu   sync.Mutex
 	seen map[string]bool
@@ -48,6 +56,15 @@ func NewDivergenceOracle(s Snapshotter, store *Store, interval time.Duration) *D
 	}
 }
 
+// WithLedgerFetcher attaches a LedgerFetcher so divergence findings include
+// snapshots of every node's ledger at the divergent seq plus a tx-set diff
+// labeled with the suspect transaction types. Pass nil to disable. Safe to
+// call before Start.
+func (o *DivergenceOracle) WithLedgerFetcher(f LedgerFetcher) *DivergenceOracle {
+	o.fetcher = f
+	return o
+}
+
 // Start launches the background detection goroutine. It exits when ctx is cancelled.
 func (o *DivergenceOracle) Start(ctx context.Context) {
 	go o.run(ctx)
@@ -61,12 +78,12 @@ func (o *DivergenceOracle) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			o.tick()
+			o.tick(ctx)
 		}
 	}
 }
 
-func (o *DivergenceOracle) tick() {
+func (o *DivergenceOracle) tick(ctx context.Context) {
 	inputs := o.snapshotter.DivergenceSnapshot()
 
 	// Group inputs by ledger sequence.
@@ -118,6 +135,29 @@ func (o *DivergenceOracle) tick() {
 				DiffKeys:    []string{fmt.Sprintf("validated_ledger:%d", seq)},
 			},
 		}
+
+		// If a LedgerFetcher is configured, snapshot every node's ledger at
+		// the divergent seq, compute the tx-set diff, and attach the suspect
+		// transaction types to the finding. This is the auto-built equivalent
+		// of the hand-written standalone-replay.py: the artifact contains
+		// everything a reviewer needs to identify which transaction caused
+		// the disagreement without grepping container logs.
+		if o.fetcher != nil {
+			nodeNames := make([]string, 0, len(group))
+			for _, in := range group {
+				nodeNames = append(nodeNames, in.Node)
+			}
+			sort.Strings(nodeNames)
+			snaps, fetchErrs := fetchAllConcurrent(ctx, o.fetcher, nodeNames, seq)
+			diff := computeLedgerDiff(seq, snaps, fetchErrs)
+			if raw, err := json.Marshal(diff); err == nil {
+				f.Detail = raw
+			}
+			if len(diff.SuspectTxTypes) > 0 {
+				f.SuspectedComponents = append(f.SuspectedComponents, diff.SuspectTxTypes...)
+			}
+		}
+
 		o.store.Add(f)
 	}
 }

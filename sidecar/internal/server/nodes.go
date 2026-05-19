@@ -135,6 +135,41 @@ func (p *NodePoller) DivergenceSnapshot() []finding.DivergenceInput {
 	return out
 }
 
+// ConsensusProgressSnapshot satisfies finding.ProgressSnapshotter. It returns
+// one entry per node whose server_info poll has produced at least one ledger
+// observation. Nodes still in "unreachable" state are skipped — they contribute
+// neither closed nor validated info and would only generate noise.
+//
+// When a node reports closed but not validated (very early boot), validated_seq
+// is left at 0; the stall oracle treats that as gap == closed and will fire if
+// it stays that way past sustainFor, which is the intended signal.
+func (p *NodePoller) ConsensusProgressSnapshot() []finding.ConsensusProgressInput {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]finding.ConsensusProgressInput, 0, len(p.nodes))
+	for _, n := range p.nodes {
+		if n.Status != "ok" {
+			continue
+		}
+		var closed, validated int
+		if n.ClosedLedger != nil {
+			closed = n.ClosedLedger.Seq
+		}
+		if n.ValidatedLedger != nil {
+			validated = n.ValidatedLedger.Seq
+		}
+		if closed == 0 && validated == 0 {
+			continue
+		}
+		out = append(out, finding.ConsensusProgressInput{
+			Node:         n.Name,
+			ClosedSeq:    closed,
+			ValidatedSeq: validated,
+		})
+	}
+	return out
+}
+
 func (p *NodePoller) pollLoop(ctx context.Context, cfg NodeConfig) {
 	p.poll(cfg)
 	ticker := time.NewTicker(p.interval)
