@@ -31,11 +31,13 @@
       </div>
       <div class="node-list" id="node-list"></div>
       <div class="rail-kpis" id="rail-kpis"></div>
+      <div class="rail-resize" id="rail-resize" title="Drag to resize · double-click to reset"></div>
     </aside>
 
     <section class="main" data-pane="main" id="main">
       <nav class="main-switch" id="main-switch" role="tablist">
         <button class="seg active" data-view="timeline" role="tab">Timeline<span class="seg-badge" id="seg-timeline-badge" hidden></span></button>
+        <button class="seg" data-view="chains" role="tab">Chains<span class="seg-badge" id="seg-chains-badge" hidden></span></button>
         <button class="seg" data-view="topology" role="tab">Topology</button>
         <button class="seg" data-view="fuzzer" role="tab">Fuzzer<span class="seg-badge" id="seg-fuzzer-badge" hidden></span></button>
       </nav>
@@ -50,10 +52,47 @@
         <button class="new-chip" id="timeline-new-chip" hidden>↓ <span id="timeline-new-count">0</span> new</button>
       </div>
 
+      <div class="view view-chains" data-view="chains">
+        <h1 class="title">Chains.</h1>
+        <p class="subtitle">Per-client tip and recent history. Highlighted cells diverge from the majority hash; lag is shown as <span class="mono">−n</span> behind the leader.</p>
+        <div class="chains-grid" id="chains-grid"></div>
+      </div>
+
       <div class="view view-topology" data-view="topology">
         <h1 class="title">Topology.</h1>
         <p class="subtitle">Click a node to inspect its logs.</p>
         <svg id="topology-svg" class="topology-svg" viewBox="0 0 700 520" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+
+      <div class="view view-block" data-view="block">
+        <div class="view-controls block-controls">
+          <button class="block-back" id="block-back" title="Back to Timeline (esc)">← Timeline</button>
+          <span class="block-source" id="block-source"></span>
+        </div>
+        <h1 class="title">Block <span class="mono" id="block-seq">—</span>.</h1>
+        <p class="subtitle"><span class="mono" id="block-hash">—</span></p>
+        <div class="block-body" id="block-body">
+          <div class="block-empty" id="block-empty">Loading…</div>
+          <section class="block-section" id="block-fleet" hidden>
+            <h2 class="block-h2">Fleet agreement</h2>
+            <table class="block-table">
+              <thead><tr><th>Node</th><th>Hash</th><th>Status</th></tr></thead>
+              <tbody id="block-fleet-body"></tbody>
+            </table>
+          </section>
+          <section class="block-section" id="block-meta" hidden>
+            <h2 class="block-h2">Ledger header</h2>
+            <dl class="block-kv" id="block-meta-list"></dl>
+          </section>
+          <section class="block-section" id="block-txs" hidden>
+            <h2 class="block-h2">Transactions <span class="block-count" id="block-tx-count">0</span></h2>
+            <div class="block-tx-empty" id="block-tx-empty" hidden>No transactions in this ledger.</div>
+            <table class="block-table block-tx-table" id="block-tx-table" hidden>
+              <thead><tr><th>#</th><th>Type</th><th>Account</th><th>Destination</th><th>Amount</th><th>Hash</th></tr></thead>
+              <tbody id="block-tx-body"></tbody>
+            </table>
+          </section>
+        </div>
       </div>
 
       <div class="view view-fuzzer" data-view="fuzzer">
@@ -68,6 +107,7 @@
     </section>
 
     <aside class="rail rail-inspector" data-pane="inspector" id="inspector">
+      <div class="inspector-resize" id="inspector-resize" title="Drag to resize · double-click to reset"></div>
       <header class="inspector-head">
         <span class="inspector-title" id="inspector-title">Fleet</span>
         <span class="inspector-head-actions">
@@ -102,16 +142,18 @@
       <div class="cheatsheet-card">
         <h2>Shortcuts</h2>
         <dl>
-          <dt>1 / 2 / 3</dt><dd>Timeline / Topology / Fuzzer</dd>
+          <dt>1 / 2 / 3 / 4</dt><dd>Timeline / Chains / Topology / Fuzzer</dd>
           <dt>j / k</dt><dd>Walk focused list</dd>
           <dt>/</dt><dd>Focus filter</dd>
           <dt>esc</dt><dd>Clear filter → selection → collapse inspector</dd>
           <dt>space</dt><dd>Pause / resume</dd>
           <dt>n</dt><dd>Next divergence (Timeline)</dd>
+          <dt>enter</dt><dd>Open focused ledger details (Timeline)</dd>
           <dt>c</dt><dd>Copy focused log / state / row</dd>
           <dt>e</dt><dd>Expand / collapse inspector</dd>
           <dt>⌘K</dt><dd>Command palette</dd>
           <dt>tab</dt><dd>Cycle panes</dd>
+          <dt>drag rail edge</dt><dd>Resize Fleet · double-click to reset</dd>
           <dt>?</dt><dd>This cheatsheet</dd>
         </dl>
       </div>

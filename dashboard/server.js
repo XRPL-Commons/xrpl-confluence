@@ -94,10 +94,10 @@ function parseFuzzMetrics(text) {
   return out;
 }
 
-function rpcCall(rpcUrl, method) {
+function rpcCall(rpcUrl, method, params = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(rpcUrl);
-    const body = JSON.stringify({ method, params: [{}] });
+    const body = JSON.stringify({ method, params: [params] });
     const req = http.request(
       {
         hostname: url.hostname,
@@ -326,6 +326,50 @@ const server = http.createServer((req, res) => {
       state: nodeStates[name] || null,
       logs: nodeLogs[name] || [],
     }));
+    return;
+  }
+
+  // Ledger details endpoint: GET /api/ledger/<seq>[?node=name]
+  // Calls the XRPL `ledger` RPC against a reachable node and returns the
+  // raw `result` payload (ledger + expanded transactions).
+  const ledgerMatch = req.url.match(/^\/api\/ledger\/([^?]+)(?:\?(.*))?$/);
+  if (ledgerMatch) {
+    const seq = Number(ledgerMatch[1]);
+    const query = new URLSearchParams(ledgerMatch[2] || "");
+    const preferred = query.get("node");
+    if (!Number.isInteger(seq) || seq <= 0) {
+      res.writeHead(400, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify({ error: "Invalid ledger sequence" }));
+      return;
+    }
+    const candidates = config.nodes.slice().sort((a, b) => {
+      if (preferred && a.name === preferred) return -1;
+      if (preferred && b.name === preferred) return 1;
+      const sa = nodeStates[a.name]?.status === "ok" ? 0 : 1;
+      const sb = nodeStates[b.name]?.status === "ok" ? 0 : 1;
+      return sa - sb;
+    });
+    (async () => {
+      let lastErr = null;
+      for (const node of candidates) {
+        try {
+          const resp = await rpcCall(node.rpc, "ledger", {
+            ledger_index: seq,
+            transactions: true,
+            expand: true,
+          });
+          const result = resp.result || {};
+          if (result.error) { lastErr = result.error_message || result.error; continue; }
+          res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+          res.end(JSON.stringify({ source: node.name, result }));
+          return;
+        } catch (e) {
+          lastErr = e.message;
+        }
+      }
+      res.writeHead(502, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify({ error: lastErr || "No node reachable" }));
+    })();
     return;
   }
 

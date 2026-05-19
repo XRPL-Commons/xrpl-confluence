@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const VIEWS = ["timeline", "topology", "fuzzer"];
+  const VIEWS = ["timeline", "chains", "topology", "fuzzer", "block"];
+  const NAV_VIEWS = ["timeline", "chains", "topology", "fuzzer"];
   const PANES = ["rail", "main", "inspector"];
   const MOCK = new URLSearchParams(location.search).get("mock") === "1";
 
@@ -23,6 +24,7 @@
     nodes: [],
     fuzz: null,
     logs: {},
+    block: { seq: null, data: null, loading: false, error: null, source: null, from: "timeline" },
     lastUpdate: 0,
     pendingUpdates: 0,
     sync: "connecting",
@@ -49,11 +51,14 @@
     const [path, query] = raw.split("?");
     const view = VIEWS.includes(path) ? path : "timeline";
     const params = new URLSearchParams(query || "");
+    const seqRaw = params.get("seq");
+    const blockSeq = seqRaw && /^\d+$/.test(seqRaw) ? Number(seqRaw) : null;
     return {
       view,
       selected: params.get("node") || null,
       onlyDivergences: params.get("only") === "diverged",
       timelineQuery: params.get("q") || "",
+      blockSeq,
     };
   }
 
@@ -63,6 +68,7 @@
     if (s.ui.selected) params.set("node", s.ui.selected);
     if (s.ui.filters.onlyDivergences) params.set("only", "diverged");
     if (s.ui.filters.timeline) params.set("q", s.ui.filters.timeline);
+    if (s.ui.view === "block" && s.block.seq != null) params.set("seq", String(s.block.seq));
     const q = params.toString();
     const target = `#/${s.ui.view}${q ? `?${q}` : ""}`;
     if (location.hash !== target) history.replaceState(null, "", target);
@@ -72,11 +78,19 @@
     const h = parseHash();
     store.setUI({ view: h.view, selected: h.selected });
     store.setFilter({ onlyDivergences: h.onlyDivergences, timeline: h.timelineQuery });
+    if (h.view === "block" && h.blockSeq != null && store.get().block.seq !== h.blockSeq) {
+      loadBlock(h.blockSeq);
+    }
   }
 
   // ── Mutators ────────────────────────────────────────────────
   function setView(view) {
     if (!VIEWS.includes(view)) view = "timeline";
+    // Leaving the block sub-route via the main nav clears the loaded block
+    // so the URL doesn't carry a stale `seq` while showing another view.
+    if (view !== "block" && store.get().ui.view === "block") {
+      store.set({ block: { seq: null, data: null, loading: false, error: null, source: null } });
+    }
     store.setUI({ view });
     pushHash();
   }
@@ -95,6 +109,34 @@
     if (!PANES.includes(pane)) return;
     if (store.get().ui.activePane === pane) return;
     store.setUI({ activePane: pane });
+  }
+
+  async function loadBlock(seq) {
+    seq = Number(seq);
+    if (!Number.isInteger(seq) || seq <= 0) return;
+    const current = store.get();
+    const from = current.ui.view === "block" ? current.block.from : (NAV_VIEWS.includes(current.ui.view) ? current.ui.view : "timeline");
+    store.set({ block: { seq, data: null, loading: true, error: null, source: null, from } });
+    store.setUI({ view: "block" });
+    pushHash();
+    try {
+      const url = MOCK ? "/fixtures/mock-ledger.json" : `/api/ledger/${seq}`;
+      const data = await fetchJSON(url);
+      if (data && data.result) {
+        store.set({ block: { seq, data: data.result, loading: false, error: null, source: data.source || null, from } });
+      } else {
+        store.set({ block: { seq, data: null, loading: false, error: (data && data.error) || "Unknown response", source: null, from } });
+      }
+    } catch (e) {
+      store.set({ block: { seq, data: null, loading: false, error: e.message, source: null, from } });
+    }
+  }
+
+  function exitBlock() {
+    const from = store.get().block.from || "timeline";
+    store.set({ block: { seq: null, data: null, loading: false, error: null, source: null, from: "timeline" } });
+    store.setUI({ view: from });
+    pushHash();
   }
 
   // ── Data layer ──────────────────────────────────────────────
@@ -165,8 +207,11 @@
 
   // ── View switcher subscriber ────────────────────────────────
   store.subscribe((s) => {
+    // The Block view is a sub-route — keep its parent tab lit while it's open
+    // so the nav still tells the user where they came from.
+    const navView = s.ui.view === "block" ? (s.block.from || "timeline") : s.ui.view;
     for (const seg of document.querySelectorAll(".seg")) {
-      seg.classList.toggle("active", seg.dataset.view === s.ui.view);
+      seg.classList.toggle("active", seg.dataset.view === navView);
     }
     for (const v of document.querySelectorAll(".view")) {
       v.classList.toggle("active", v.dataset.view === s.ui.view);
@@ -182,6 +227,7 @@
     const age = s.lastUpdate ? Math.max(0, Math.round((Date.now() - s.lastUpdate) / 1000)) : null;
     const parts = [];
     if (s.ui.view === "fuzzer" && s.fuzz) parts.push(`seed #${s.fuzz.current_seed}`);
+    else if (s.ui.view === "block" && s.block.seq != null) parts.push(`block #${s.block.seq.toLocaleString("en-US")}`);
     else if (maxSeq) parts.push(`seq ${maxSeq.toLocaleString("en-US")}`);
     if (age != null) parts.push(`${age}s ago`);
     ctx.textContent = parts.length ? `· ${parts.join(" · ")}` : "—";
@@ -257,11 +303,34 @@
 
   // ── Timeline state ──────────────────────────────────────────
   const MAX_TIMELINE = 80;
+  const MAX_CHAIN = 25;
   const prevValidatedSeqs = {};
   const prevClosedSeqs = {};
   const closeRows = new Map(); // seq → { time, hash, byNode: Map }
+  // Per-node validated history (newest first), used by the Chains view to
+  // visualize live desync. Each entry: { seq, hash, time }.
+  const nodeChains = {};
+  // seq → Map(nodeName → hash). Lets the Chains view colour each cell
+  // against the majority hash for that seq across the fleet.
+  const seqHashByNode = new Map();
   let pendingNew = 0;
   let timelinePinned = false;
+
+  function pushNodeChain(name, seq, hash, time) {
+    const list = nodeChains[name] || (nodeChains[name] = []);
+    if (list.length && list[0].seq === seq) {
+      // Same tip — fill in a hash we didn't have yet.
+      if (!list[0].hash && hash) list[0].hash = hash;
+    } else if (!list.length || list[0].seq < seq) {
+      list.unshift({ seq, hash: hash || "", time });
+      if (list.length > MAX_CHAIN) list.length = MAX_CHAIN;
+    }
+    if (hash) {
+      const m = seqHashByNode.get(seq) || new Map();
+      m.set(name, hash);
+      seqHashByNode.set(seq, m);
+    }
+  }
 
   function pushTimelineEvents(nodes) {
     const now = new Date();
@@ -276,6 +345,7 @@
         row.byNode.set(n.name, diverged ? "diverged" : "match");
         row.hash = hashSeen;
         if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
+        pushNodeChain(n.name, v, n.validated_ledger.hash || "", now);
       }
       const c = n.closed_ledger?.seq;
       if (!v && c != null && prevClosedSeqs[n.name] !== c) {
@@ -334,7 +404,7 @@
         }).join("");
         const divClass = rowDiverged(row) ? "diverged" : "";
         return `<div class="timeline-row ${divClass}" data-seq="${seq}">
-          <div class="timeline-seq">${seq.toLocaleString("en-US")}</div>
+          <div class="timeline-seq" data-seq="${seq}" title="Open block details">${seq.toLocaleString("en-US")}</div>
           <div class="timeline-rule"></div>
           <div class="timeline-meta">
             <span>${time}</span>
@@ -347,6 +417,10 @@
       // Wire per-dot click → select that node
       for (const dot of list.querySelectorAll(".timeline-dots span[data-name]")) {
         dot.addEventListener("click", (e) => { e.stopPropagation(); setSelected(dot.dataset.name); });
+      }
+      // Wire seq click → open block details
+      for (const seqEl of list.querySelectorAll(".timeline-seq[data-seq]")) {
+        seqEl.addEventListener("click", (e) => { e.stopPropagation(); loadBlock(Number(seqEl.dataset.seq)); });
       }
 
       if (timelinePinned && pendingNew > 0) {
@@ -412,6 +486,248 @@
     for (const g of svg.querySelectorAll(".topo-node")) {
       g.addEventListener("click", () => setSelected(g.dataset.name));
     }
+  });
+
+  // ── Chains render (per-client block history) ───────────────
+  // Strategy: for each node we keep up to MAX_CHAIN recent validated
+  // ledgers. A cell is "diverged" when its hash differs from the most
+  // common hash other nodes reported for the same seq. The tip cell is
+  // marked "tip" so the column header's lag readout makes sense at a
+  // glance. Clicking any cell jumps into the block details view.
+  function majorityHashFor(seq) {
+    const m = seqHashByNode.get(seq);
+    if (!m || m.size === 0) return null;
+    const counts = new Map();
+    for (const h of m.values()) counts.set(h, (counts.get(h) || 0) + 1);
+    let best = null, bestN = 0;
+    for (const [h, n] of counts) {
+      if (n > bestN) { best = h; bestN = n; }
+    }
+    return best;
+  }
+
+  store.subscribe((s) => {
+    const grid = document.getElementById("chains-grid");
+    const badge = document.getElementById("seg-chains-badge");
+    if (!grid) return;
+    const nodes = s.nodes || [];
+    if (!nodes.length) {
+      grid.innerHTML = `<div class="chain-empty">Waiting for nodes…</div>`;
+      if (badge) { badge.hidden = true; badge.textContent = ""; }
+      return;
+    }
+
+    const tips = nodes.map((n) => (nodeChains[n.name] || [])[0]?.seq || 0);
+    const maxTip = tips.length ? Math.max(...tips) : 0;
+
+    let divergedNodes = 0;
+    const cols = nodes.map((n) => {
+      const chain = nodeChains[n.name] || [];
+      const tipSeq = chain[0]?.seq || 0;
+      const lag = tipSeq && maxTip ? maxTip - tipSeq : 0;
+      const health = healthClass(n);
+      const sel = s.ui.selected === n.name ? "selected" : "";
+      let colHasDiverge = false;
+      const cells = chain.map((c, idx) => {
+        const majority = majorityHashFor(c.seq);
+        const diverged = c.hash && majority && c.hash !== majority;
+        if (diverged) colHasDiverge = true;
+        const cls = [diverged ? "diverged" : "", idx === 0 ? "tip" : ""].filter(Boolean).join(" ");
+        const title = c.hash ? `${c.hash}` : "";
+        return `<div class="chain-cell ${cls}" data-seq="${c.seq}" title="${escapeHTML(title)}">
+          <span class="chain-seq">${c.seq.toLocaleString("en-US")}</span>
+          <span class="chain-hash">${escapeHTML(shortHash(c.hash))}</span>
+        </div>`;
+      }).join("");
+      if (colHasDiverge) divergedNodes += 1;
+      const lagChip = lag > 0
+        ? `<span class="chain-lag" title="behind leader by ${lag} ledger${lag === 1 ? "" : "s"}">−${lag}</span>`
+        : tipSeq && tipSeq === maxTip ? `<span class="chain-tip-leader" title="at fleet leader tip">●</span>` : "";
+      return `<div class="chain-col ${sel}" data-name="${escapeHTML(n.name)}">
+        <header class="chain-head">
+          <span class="node-pip ${health}"></span>
+          <span class="chain-name">${escapeHTML(n.name)}</span>
+          ${lagChip}
+        </header>
+        <div class="chain-cells">${cells || `<div class="chain-empty">Waiting for ledger close…</div>`}</div>
+      </div>`;
+    }).join("");
+
+    grid.innerHTML = cols;
+    if (!grid.dataset.delegated) {
+      grid.addEventListener("click", (e) => {
+        const cell = e.target.closest(".chain-cell[data-seq]");
+        if (cell) { loadBlock(Number(cell.dataset.seq)); return; }
+        const col = e.target.closest(".chain-col[data-name]");
+        if (col) setSelected(col.dataset.name);
+      });
+      grid.dataset.delegated = "1";
+    }
+
+    if (badge) {
+      if (divergedNodes > 0) {
+        badge.textContent = `${divergedNodes} desync${divergedNodes === 1 ? "" : "ed"}`;
+        badge.hidden = false;
+      } else {
+        badge.hidden = true;
+        badge.textContent = "";
+      }
+    }
+  });
+
+  // ── Block (ledger) render ───────────────────────────────────
+  function fmtAmount(amt) {
+    if (amt == null) return "";
+    if (typeof amt === "string") {
+      // Drops → XRP (drops are integer strings)
+      if (/^\d+$/.test(amt)) {
+        const drops = BigInt(amt);
+        const whole = drops / 1000000n;
+        const frac = drops % 1000000n;
+        const fracStr = frac.toString().padStart(6, "0").replace(/0+$/, "");
+        return `${whole.toString()}${fracStr ? "." + fracStr : ""} XRP`;
+      }
+      return amt;
+    }
+    if (typeof amt === "object" && amt.value) {
+      return `${amt.value} ${amt.currency || ""}`.trim() + (amt.issuer ? ` · ${amt.issuer.slice(0, 8)}…` : "");
+    }
+    return String(amt);
+  }
+
+  function escapeHTML(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+
+  function shortHash(h) {
+    if (!h) return "";
+    return h.length > 18 ? h.slice(0, 8) + "…" + h.slice(-6) : h;
+  }
+
+  // Best-effort close_time → ISO string. XRPL close_time is seconds since
+  // the Ripple epoch (2000-01-01T00:00:00Z), 946684800 unix.
+  function fmtCloseTime(ledger) {
+    if (ledger.close_time_human) return ledger.close_time_human;
+    if (typeof ledger.close_time === "number") {
+      const unix = (ledger.close_time + 946684800) * 1000;
+      return new Date(unix).toISOString().replace("T", " ").replace("Z", " UTC");
+    }
+    return "";
+  }
+
+  store.subscribe((s) => {
+    if (s.ui.view !== "block") return;
+    const seqEl = document.getElementById("block-seq");
+    const hashEl = document.getElementById("block-hash");
+    const empty = document.getElementById("block-empty");
+    const fleet = document.getElementById("block-fleet");
+    const meta = document.getElementById("block-meta");
+    const txs = document.getElementById("block-txs");
+    const source = document.getElementById("block-source");
+    if (!seqEl) return;
+
+    seqEl.textContent = s.block.seq != null ? `#${s.block.seq.toLocaleString("en-US")}` : "—";
+    source.textContent = s.block.source ? `via ${s.block.source}` : "";
+
+    if (s.block.loading) {
+      empty.hidden = false;
+      empty.textContent = "Loading…";
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    if (s.block.error) {
+      empty.hidden = false;
+      empty.textContent = `Failed to load ledger: ${s.block.error}`;
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    const result = s.block.data;
+    if (!result || !(result.ledger || result.ledger_hash)) {
+      empty.hidden = false;
+      empty.textContent = "No ledger data.";
+      hashEl.textContent = "—";
+      fleet.hidden = true; meta.hidden = true; txs.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+
+    const ledger = result.ledger || {};
+    const ledgerHash = result.ledger_hash || ledger.ledger_hash || ledger.hash || "";
+    hashEl.textContent = ledgerHash || "—";
+
+    // Fleet agreement — uses local close-row data captured from the live stream
+    const row = closeRows.get(s.block.seq);
+    const nodeNames = (s.nodes || []).map((n) => n.name);
+    const fleetBody = document.getElementById("block-fleet-body");
+    if (row && nodeNames.length) {
+      fleet.hidden = false;
+      const localHash = row.hash || ledgerHash;
+      fleetBody.innerHTML = nodeNames.map((name) => {
+        const status = row.byNode.get(name);
+        let label = "missing";
+        let cls = "block-status-missing";
+        if (status === "match") { label = "match"; cls = "block-status-match"; }
+        else if (status === "diverged") { label = "diverged"; cls = "block-status-diverged"; }
+        return `<tr class="${status === "diverged" ? "diverged" : ""}">
+          <td>${escapeHTML(name)}</td>
+          <td>${escapeHTML(shortHash(localHash))}</td>
+          <td class="${cls}">${label}</td>
+        </tr>`;
+      }).join("");
+    } else {
+      fleet.hidden = true;
+    }
+
+    // Ledger header
+    const metaPairs = [
+      ["Ledger index", ledger.ledger_index || result.ledger_index || s.block.seq],
+      ["Ledger hash", ledgerHash],
+      ["Parent hash", ledger.parent_hash],
+      ["Account state hash", ledger.account_hash],
+      ["Transaction hash", ledger.transaction_hash],
+      ["Close time", fmtCloseTime(ledger)],
+      ["Close flags", ledger.close_flags != null ? String(ledger.close_flags) : ""],
+      ["Close time resolution", ledger.close_time_resolution != null ? String(ledger.close_time_resolution) : ""],
+      ["Parent close time", ledger.parent_close_time != null ? String(ledger.parent_close_time) : ""],
+      ["Total coins", ledger.total_coins ? fmtAmount(ledger.total_coins) : ""],
+      ["Validated", String(Boolean(result.validated))],
+    ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+    document.getElementById("block-meta-list").innerHTML = metaPairs.map(
+      ([k, v]) => `<dt>${escapeHTML(k)}</dt><dd>${escapeHTML(v)}</dd>`
+    ).join("");
+    meta.hidden = false;
+
+    // Transactions
+    const txList = Array.isArray(ledger.transactions) ? ledger.transactions : [];
+    document.getElementById("block-tx-count").textContent = txList.length;
+    const txEmpty = document.getElementById("block-tx-empty");
+    const txTable = document.getElementById("block-tx-table");
+    const txBody = document.getElementById("block-tx-body");
+    if (!txList.length) {
+      txEmpty.hidden = false;
+      txTable.hidden = true;
+    } else {
+      txEmpty.hidden = true;
+      txTable.hidden = false;
+      txBody.innerHTML = txList.map((tx, i) => {
+        // With expand:true, each entry can be an object with the tx fields
+        // (and optionally a `metaData` sibling), or a bare hash string when
+        // the node doesn't honor expand.
+        const t = typeof tx === "string" ? { hash: tx } : tx;
+        const hash = t.hash || t.tx_hash || (t.metaData && t.metaData.TransactionResult ? "" : "") || "";
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${escapeHTML(t.TransactionType || "—")}</td>
+          <td>${escapeHTML(t.Account || "")}</td>
+          <td>${escapeHTML(t.Destination || "")}</td>
+          <td>${escapeHTML(fmtAmount(t.Amount || t.DeliverMax))}</td>
+          <td title="${escapeHTML(hash)}">${escapeHTML(shortHash(hash))}</td>
+        </tr>`;
+      }).join("");
+    }
+    txs.hidden = false;
   });
 
   // ── Fuzzer render ───────────────────────────────────────────
@@ -651,6 +967,10 @@
       const rows = document.querySelectorAll(".node-row");
       const r = rows[railFocusIdx];
       if (r) setSelected(r.dataset.name);
+    } else if (pane === "main" && store.get().ui.view === "timeline") {
+      const rows = document.querySelectorAll(".timeline-row");
+      const r = rows[timelineFocusIdx];
+      if (r && r.dataset.seq) loadBlock(Number(r.dataset.seq));
     } else if (pane === "inspector") {
       const cb = document.getElementById("log-follow");
       cb.checked = !cb.checked;
@@ -703,6 +1023,7 @@
         if (e.target.id === "log-filter") { store.setFilter({ logs: "" }); e.target.value = ""; }
         return;
       }
+      if (store.get().ui.view === "block") { exitBlock(); return; }
       if (store.get().ui.selected) { setSelected(null); return; }
       return;
     }
@@ -712,8 +1033,9 @@
 
     switch (e.key) {
       case "1": setView("timeline"); break;
-      case "2": setView("topology"); break;
-      case "3": setView("fuzzer"); break;
+      case "2": setView("chains"); break;
+      case "3": setView("topology"); break;
+      case "4": setView("fuzzer"); break;
       case "j": case "J": walkList(+1); break;
       case "k": case "K": walkList(-1); break;
       case "Enter": activateFocused(); break;
@@ -796,6 +1118,79 @@
     });
   });
 
+  // ── Rail resize (Fleet + Inspector) ─────────────────────────
+  // The two side rails share the same drag-handle pattern. `edge` is
+  // which border of the target panel the handle sits on — for the left
+  // Fleet rail the handle is on the right edge so moving right grows
+  // the rail; for the right Inspector it's mirrored.
+  function setupResizable({ handleId, panelId, cssVar, storageKey, defaultPx, minPx, maxPx, edge, bodyClass }) {
+    const apply = (px) => {
+      const clamped = Math.max(minPx, Math.min(maxPx, Math.round(px)));
+      document.documentElement.style.setProperty(cssVar, clamped + "px");
+      return clamped;
+    };
+
+    const stored = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(stored) && stored >= minPx && stored <= maxPx) apply(stored);
+
+    const handle = document.getElementById(handleId);
+    if (!handle) return;
+
+    let dragging = false;
+    const onMove = (e) => {
+      if (!dragging) return;
+      const rect = document.getElementById(panelId).getBoundingClientRect();
+      // Left-edge handle on the right-side panel: width = panel.right - cursor.
+      // Right-edge handle on the left-side panel: width = cursor - panel.left.
+      const px = edge === "left" ? rect.right - e.clientX : e.clientX - rect.left;
+      const w = apply(px);
+      try { localStorage.setItem(storageKey, String(w)); } catch {}
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove(bodyClass);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.body.classList.add(bodyClass);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+    handle.addEventListener("dblclick", () => {
+      apply(defaultPx);
+      try { localStorage.removeItem(storageKey); } catch {}
+    });
+  }
+
+  function setupRailResize() {
+    setupResizable({
+      handleId: "rail-resize",
+      panelId: "rail-nodes",
+      cssVar: "--rail-w",
+      storageKey: "wb:rail-w",
+      defaultPx: 220,
+      minPx: 80,
+      maxPx: 480,
+      edge: "right",
+      bodyClass: "resizing-rail",
+    });
+    setupResizable({
+      handleId: "inspector-resize",
+      panelId: "inspector",
+      cssVar: "--inspector-w",
+      storageKey: "wb:inspector-w",
+      defaultPx: 420,
+      minPx: 120,
+      maxPx: 720,
+      edge: "left",
+      bodyClass: "resizing-inspector",
+    });
+  }
+
   // ── Init ────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     // Wire main switch
@@ -833,6 +1228,14 @@
         store.set({}); // trigger re-render
       });
     });
+    // Block view back button
+    document.getElementById("block-back").addEventListener("click", () => exitBlock());
+
+    // Fleet rail resize — drag the splitter on the rail's right edge to
+    // shrink/grow the Fleet column. Width persists across reloads. The
+    // CSS variable lives on :root, matching the default in style.css.
+    setupRailResize();
+
     // Inspector clear
     document.getElementById("inspector-clear").addEventListener("click", () => setSelected(null));
     document.getElementById("inspector-expand").addEventListener("click", () => {
