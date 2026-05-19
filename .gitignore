@@ -9,7 +9,11 @@
 
 # Kurtosis
 .kurtosis/
-.claude/
+
+# Claude Code per-project state — ignore everything except committed skills.
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # Brainstorming sessions / worktrees
 .superpowers/
