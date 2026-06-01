@@ -14,7 +14,7 @@ def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
     Args:
         plan: Kurtosis plan object.
         rippled_nodes: List of rippled node descriptors.
-        goxrpl_nodes: List of goXRPL node descriptors.
+        goxrpl_nodes: List of go-xrpl node descriptors.
         dashboard_files: Files artifact containing dashboard code.
 
     Returns:

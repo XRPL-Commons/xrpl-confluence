@@ -97,7 +97,7 @@ func (p *Poller) Tick(ctx context.Context) error {
 type HangDetector struct {
 	StaleTicks int                                                            // how many consecutive same-value ticks count as hung
 	Liveness   func(ctx context.Context, name string) (signal int64, err error)
-	Match      func(name string) bool // only call SIGQUIT on matching containers (e.g. goXRPL)
+	Match      func(name string) bool // only call SIGQUIT on matching containers (e.g. go-xrpl)
 	last       map[string]int64
 	stale      map[string]int
 	fired      map[string]bool

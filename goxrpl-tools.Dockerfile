@@ -1,6 +1,6 @@
-# goxrpl-tools — goXRPL binary + chaos-event tools (iproute2, iptables).
+# goxrpl-tools — go-xrpl binary + chaos-event tools (iproute2, iptables).
 # Built by scripts/build-goxrpl-tools.sh; consumed by the chaos suite to
-# enable LatencyEvent / PartitionEvent against goXRPL containers (the vanilla
+# enable LatencyEvent / PartitionEvent against go-xrpl containers (the vanilla
 # distroless goxrpl image lacks tc/iptables).
 
 FROM goxrpl:latest AS bin

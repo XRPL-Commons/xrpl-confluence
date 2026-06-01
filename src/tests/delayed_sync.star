@@ -1,7 +1,7 @@
 """Delayed sync test.
 
 Launches rippled nodes first, waits for them to advance past genesis,
-then launches goXRPL to observe connection and sync behavior with a
+then launches go-xrpl to observe connection and sync behavior with a
 staggered start.
 """
 
@@ -13,7 +13,7 @@ def run(plan, rippled_nodes, goxrpl_image, network_config):
     Args:
         plan: Kurtosis plan object.
         rippled_nodes: List of already-running rippled node descriptors.
-        goxrpl_image: Docker image for goXRPL.
+        goxrpl_image: Docker image for go-xrpl.
         network_config: Shared network configuration artifact.
 
     Returns:
@@ -39,8 +39,8 @@ def run(plan, rippled_nodes, goxrpl_image, network_config):
         timeout = "120s",
     )
 
-    # Capture rippled state before launching goXRPL
-    plan.print("Rippled advanced past genesis. Querying state before goXRPL launch...")
+    # Capture rippled state before launching go-xrpl
+    plan.print("Rippled advanced past genesis. Querying state before go-xrpl launch...")
     for node in rippled_nodes:
         plan.request(
             service_name = node["name"],
@@ -52,12 +52,12 @@ def run(plan, rippled_nodes, goxrpl_image, network_config):
             ),
         )
 
-    # --- Step 2: Launch goXRPL ---
-    plan.print("Launching goXRPL node...")
+    # --- Step 2: Launch go-xrpl ---
+    plan.print("Launching go-xrpl node...")
     goxrpl_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config)
 
-    # --- Step 3: Wait for goXRPL to be ready, then observe ---
-    plan.print("Waiting for goXRPL RPC to respond...")
+    # --- Step 3: Wait for go-xrpl to be ready, then observe ---
+    plan.print("Waiting for go-xrpl RPC to respond...")
     plan.wait(
         service_name = goxrpl_nodes[0]["name"],
         recipe = PostHttpRequestRecipe(
@@ -74,11 +74,11 @@ def run(plan, rippled_nodes, goxrpl_image, network_config):
     )
 
     # --- Step 4: Wait 30s for sync attempt, then query all nodes ---
-    plan.print("goXRPL is up. Waiting 30s for sync attempt...")
+    plan.print("go-xrpl is up. Waiting 30s for sync attempt...")
 
     # Use plan.wait with a higher seq target as a delay mechanism.
-    # If goXRPL syncs, it will pass. If not, it times out and we still report.
-    plan.print("Checking if goXRPL advances beyond seq 2 within 60s...")
+    # If go-xrpl syncs, it will pass. If not, it times out and we still report.
+    plan.print("Checking if go-xrpl advances beyond seq 2 within 60s...")
     plan.wait(
         service_name = goxrpl_nodes[0]["name"],
         recipe = PostHttpRequestRecipe(

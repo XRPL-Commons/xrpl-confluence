@@ -23,7 +23,7 @@ def run(plan, nodes, args = {}):
 
     Args:
         plan: Kurtosis plan object.
-        nodes: List of all node descriptors (rippled + goXRPL).
+        nodes: List of all node descriptors (rippled + go-xrpl).
         args: Optional configuration dict.
             - tx_rate: Transactions per second (0 = unlimited, default 0).
             - rotate_every: Rotate account tier every N txs (default 1000).
@@ -49,7 +49,7 @@ def run(plan, nodes, args = {}):
     rippled_nodes_count = len([n for n in nodes if n["type"] == "rippled"])
     goxrpl_nodes_count = len([n for n in nodes if n["type"] == "goxrpl"])
     if rippled_nodes_count < 2 or goxrpl_nodes_count < 1:
-        fail("soak suite requires >= 2 rippled and >= 1 goXRPL (got {} rippled, {} goxrpl)".format(
+        fail("soak suite requires >= 2 rippled and >= 1 go-xrpl (got {} rippled, {} goxrpl)".format(
             rippled_nodes_count, goxrpl_nodes_count,
         ))
 
@@ -58,11 +58,11 @@ def run(plan, nodes, args = {}):
 
     # Wait only on rippled nodes for readiness — they're the canonical signal
     # that the network is producing validated ledgers. The current topology
-    # (see topology.star) puts goXRPL in the trusted UNL and sizes quorum over
-    # the full validator set, so goXRPL must be able to emit validations for
+    # (see topology.star) puts go-xrpl in the trusted UNL and sizes quorum over
+    # the full validator set, so go-xrpl must be able to emit validations for
     # consensus to advance at all; with a stale goxrpl image lacking that
     # support, this wait will time out as a downstream symptom. Diagnose by
-    # rebuilding `goxrpl:latest` from current goXRPL main.
+    # rebuilding `goxrpl:latest` from current go-xrpl main.
     plan.print("Waiting for rippled nodes to reach closed_seq >= 3 (requires goxrpl:latest to validate; see topology.star quorum sizing)...")
     for node in rippled_nodes:
         helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")

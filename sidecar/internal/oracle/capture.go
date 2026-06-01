@@ -167,7 +167,7 @@ func (c *DivergenceCapture) MarshalJSON() ([]byte, error) {
 }
 
 // ExportFixture converts a DivergenceCapture into a fixture compatible with
-// the goXRPL conformance runner (xrpl-fixtures format).
+// the go-xrpl conformance runner (xrpl-fixtures format).
 func (c *DivergenceCapture) ExportFixture() map[string]interface{} {
 	steps := []interface{}{}
 

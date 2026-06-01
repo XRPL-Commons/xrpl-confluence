@@ -1,11 +1,11 @@
 """Network topology and shared configuration generation.
 
-Generates valid rippled (.cfg) and goXRPL (.toml) configs for a private
+Generates valid rippled (.cfg) and go-xrpl (.toml) configs for a private
 test network, including shared validator keys and peer lists.
 """
 
 # Pre-generated validator keypairs (secp256k1).
-# Generated via scripts/keygen/main.go using goXRPL crypto.
+# Generated via scripts/keygen/main.go using go-xrpl crypto.
 # Each node gets one keypair; the seed goes into that node's config,
 # and ALL public keys go into every node's validators file.
 VALIDATOR_KEYS = [
@@ -36,7 +36,7 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
     Args:
         plan: Kurtosis plan object.
         rippled_count: Number of rippled nodes.
-        goxrpl_count: Number of goXRPL nodes.
+        goxrpl_count: Number of go-xrpl nodes.
 
     Returns:
         A files artifact containing configuration for all nodes.
@@ -52,8 +52,8 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
 
     # The trusted UNL includes ALL nodes (rippled + goxrpl). With issue #401's
     # bootstrap fixes (closedLedger no-regress + key-type Verify dispatch) on
-    # the goXRPL side, goXRPL validators are first-class participants — quorum
-    # is computed against the full set so goXRPL's emitted validations
+    # the go-xrpl side, go-xrpl validators are first-class participants — quorum
+    # is computed against the full set so go-xrpl's emitted validations
     # actually count toward fully-validated ledger advancement.
     all_pubkeys = [VALIDATOR_KEYS[i]["pubkey"] for i in range(total)]
 
@@ -70,7 +70,7 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
             total_validators = total,
         )
 
-    # Per-node goXRPL configs
+    # Per-node go-xrpl configs
     for i in range(goxrpl_count):
         key_index = rippled_count + i
         peers = [name for name in all_names if name != goxrpl_names[i]]
@@ -96,7 +96,7 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
 def _render_rippled_config(index, node_key, peers, rippled_count, total_validators):
     """Render a complete rippled.cfg for a private test network node.
 
-    Quorum is sized over the full UNL (rippled + goXRPL). Formula:
+    Quorum is sized over the full UNL (rippled + go-xrpl). Formula:
     ceil(0.8 * total_validators), matching rippled's default 80% rule
     (RCLConsensus uses ceil, not floor+1 — for total=5 this is 4).
     """
@@ -197,7 +197,7 @@ full
 
 
 def _render_goxrpl_config(index, node_key, peers):
-    """Render a complete goXRPL xrpld.toml for a private test network node."""
+    """Render a complete go-xrpl xrpld.toml for a private test network node."""
     ips_fixed_entries = ""
     for peer in peers:
         ips_fixed_entries += '    "{} {}",\n'.format(peer, PEER_PORT)
@@ -329,7 +329,7 @@ def _render_validators_txt(pubkeys):
 
 
 def _render_validators_toml(pubkeys):
-    """Render a validators.toml file for goXRPL (TOML format)."""
+    """Render a validators.toml file for go-xrpl (TOML format)."""
     entries = ""
     for i, key in enumerate(pubkeys):
         comma = "," if i < len(pubkeys) - 1 else ""
