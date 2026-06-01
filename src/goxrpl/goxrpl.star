@@ -1,16 +1,16 @@
-"""goXRPL node service definition."""
+"""go-xrpl node service definition."""
 
 PEER_PORT = 51235
 RPC_PORT = 5005
 WS_PORT = 6006
 
 def launch(plan, count, image, network_config, name_prefix = "goxrpl", enable_chaos_tools = False):
-    """Launch goXRPL validator nodes.
+    """Launch go-xrpl validator nodes.
 
     Args:
         plan: Kurtosis plan object.
-        count: Number of goXRPL nodes to launch.
-        image: Docker image for goXRPL.
+        count: Number of go-xrpl nodes to launch.
+        image: Docker image for go-xrpl.
         network_config: Shared network configuration artifact.
         name_prefix: Service name prefix (default: "goxrpl").
         enable_chaos_tools: When True, replace `image` with goxrpl-tools:latest

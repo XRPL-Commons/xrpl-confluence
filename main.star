@@ -1,7 +1,7 @@
 """
 xrpl-confluence: XRPL multi-implementation interop testing harness.
 
-Orchestrates mixed networks of rippled and goXRPL nodes to validate
+Orchestrates mixed networks of rippled and go-xrpl nodes to validate
 p2p messaging, transaction propagation, ledger sync, and consensus compatibility.
 """
 
@@ -23,9 +23,9 @@ def run(plan, args = {}):
         plan: Kurtosis plan object.
         args: Configuration dictionary.
             - rippled_count: Number of rippled nodes (default: 4).
-            - goxrpl_count: Number of goXRPL nodes (default: 1).
+            - goxrpl_count: Number of go-xrpl nodes (default: 1).
             - rippled_image: Docker image for rippled (default: "rippleci/rippled:2.6.2").
-            - goxrpl_image: Docker image for goXRPL (default: "goxrpl:latest").
+            - goxrpl_image: Docker image for go-xrpl (default: "goxrpl:latest").
             - test_suite: Which test suite to run: "all", "propagation", "sync", "consensus", "soak", "delayed_sync", "fuzz", "replay", "shrink", "chaos" (default: "all").
             - shrink_args: For test_suite == "shrink": dict with shrink_artifact, shrink_max_step, optionally seed/accounts/validate_timeout.
             - soak_args: For test_suite == "soak": dict with tx_rate, rotate_every, mutation_rate, accounts, corpus_host_path.
@@ -46,7 +46,7 @@ def run(plan, args = {}):
     # the user *after* the network came up.
     _validate_topology(rippled_count, goxrpl_count, test_suite)
 
-    plan.print("Starting xrpl-confluence with {} rippled + {} goXRPL nodes".format(rippled_count, goxrpl_count))
+    plan.print("Starting xrpl-confluence with {} rippled + {} go-xrpl nodes".format(rippled_count, goxrpl_count))
 
     # Generate shared network config (validator keys, peer list, genesis ledger)
     network_config = topology.generate_network_config(plan, rippled_count, goxrpl_count)
@@ -59,17 +59,17 @@ def run(plan, args = {}):
     rippled_nodes = rippled.launch(plan, rippled_count, rippled_image, network_config)
 
     # Delayed sync test: launch rippled first, start dashboard with rippled-only,
-    # then run the test which launches goXRPL internally.
+    # then run the test which launches go-xrpl internally.
     if test_suite == "delayed_sync":
         dashboard.launch(plan, rippled_nodes, [], dashboard_files)
-        # NOTE(M2.10): delayed_sync launches goXRPL internally after rippled advances,
+        # NOTE(M2.10): delayed_sync launches go-xrpl internally after rippled advances,
         # so goxrpl_nodes is [] here. The control service starts with rippled-only
-        # and will not pick up goXRPL nodes until live reconfig is added (M3+).
+        # and will not pick up go-xrpl nodes until live reconfig is added (M3+).
         control_service.launch(plan, rippled_nodes, [], scenarios_files)
-        plan.print("=== Running delayed sync test (goXRPL launches after rippled advances) ===")
+        plan.print("=== Running delayed sync test (go-xrpl launches after rippled advances) ===")
         return delayed_sync.run(plan, rippled_nodes, goxrpl_image, network_config)
 
-    # Launch goXRPL nodes. Chaos suite swaps in goxrpl-tools:latest so
+    # Launch go-xrpl nodes. Chaos suite swaps in goxrpl-tools:latest so
     # iproute2/iptables are available for netem/partition events.
     enable_chaos_tools = (test_suite == "chaos")
     goxrpl_nodes = goxrpl.launch(plan, goxrpl_count, goxrpl_image, network_config, enable_chaos_tools = enable_chaos_tools)
@@ -88,7 +88,7 @@ def run(plan, args = {}):
 # Per-suite minimum-counts table. Each entry maps a suite name to
 # (min_rippled, min_goxrpl). Anything not listed has no minimum.
 #
-# Soak / chaos drive goXRPL hard against multiple rippled validators, so
+# Soak / chaos drive go-xrpl hard against multiple rippled validators, so
 # both require >= 2 rippled and >= 1 goxrpl. Shrink replays a saved run
 # log against the network and has the same minimums for the same reason.
 # fuzz / replay are bounded but still need a peer for the oracle to compare

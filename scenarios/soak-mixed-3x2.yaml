@@ -2,7 +2,7 @@ apiVersion: confluence/v1
 kind: Scenario
 metadata:
   name: soak-mixed-3x2
-  description: 3 rippled + 2 goXRPL, soak workload, 10 min budget
+  description: 3 rippled + 2 go-xrpl, soak workload, 10 min budget
 topology:
   rippled:
     count: 3

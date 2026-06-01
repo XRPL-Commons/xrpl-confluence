@@ -7,7 +7,7 @@ import (
 
 // LatencyEvent adds a `tc netem delay` qdisc on Apply and removes it on
 // Recover. Requires iproute2 inside the target container; rippled
-// containers ship it, the goXRPL distroless image does not.
+// containers ship it, the go-xrpl distroless image does not.
 type LatencyEvent struct {
 	Runtime   NetworkRuntime
 	Container string

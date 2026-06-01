@@ -12,12 +12,12 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
     """Run ledger sync tests.
 
     Test scenarios:
-    1. Late-joining goXRPL node syncs from the existing mixed network.
+    1. Late-joining go-xrpl node syncs from the existing mixed network.
 
     Args:
         plan: Kurtosis plan object.
         nodes: List of all node descriptors.
-        goxrpl_image: Docker image for goXRPL (needed to launch new node).
+        goxrpl_image: Docker image for go-xrpl (needed to launch new node).
         network_config: Shared network configuration artifact.
 
     Returns:
@@ -30,7 +30,7 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
         results["late_join_sync"] = "skipped"
         return results
 
-    plan.print("Test: late-joining goXRPL node syncs with mixed network")
+    plan.print("Test: late-joining go-xrpl node syncs with mixed network")
     results["late_join_sync"] = _test_late_join_sync(
         plan, nodes, goxrpl_image, network_config,
     )
@@ -39,16 +39,16 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
 
 
 def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
-    """Launch a fresh goXRPL node after the network has advanced and verify it syncs.
+    """Launch a fresh go-xrpl node after the network has advanced and verify it syncs.
 
     1. Wait for the network to produce ledgers with some state (funded account).
-    2. Launch a new goXRPL node.
+    2. Launch a new go-xrpl node.
     3. Verify it syncs and can serve the same ledger data.
 
     Args:
         plan: Kurtosis plan object.
         nodes: List of existing node descriptors.
-        goxrpl_image: Docker image for goXRPL.
+        goxrpl_image: Docker image for go-xrpl.
         network_config: Shared network configuration artifact.
 
     Returns:
@@ -81,8 +81,8 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     for node in nodes:
         helpers.wait_for_ledger_seq(plan, node, 10, timeout = "120s")
 
-    # --- Phase 2: Launch a fresh goXRPL node ---
-    plan.print("  Launching fresh goXRPL node...")
+    # --- Phase 2: Launch a fresh go-xrpl node ---
+    plan.print("  Launching fresh go-xrpl node...")
     new_nodes = goxrpl.launch(plan, 1, goxrpl_image, network_config, name_prefix = "goxrpl-late")
     new_node = new_nodes[0]
 
@@ -96,9 +96,9 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     # --- Phase 4: Verify state consistency ---
     # Use ledger_index="validated" to dodge the race where a hardcoded
     # seq isn't closed/validated on one of the nodes yet. Both the
-    # reference rippled node and the freshly-synced goXRPL must agree
+    # reference rippled node and the freshly-synced go-xrpl must agree
     # on the same validated ledger hash — that's the real proof that
-    # goXRPL processed the same history rippled did.
+    # go-xrpl processed the same history rippled did.
     plan.print("  Comparing validated ledger between reference and new node...")
     compare_nodes = [reference_node, new_node]
     helpers.assert_validated_ledgers_match(plan, compare_nodes)
@@ -118,5 +118,5 @@ def _test_late_join_sync(plan, nodes, goxrpl_image, network_config):
     plan.print("  Final state of all nodes:")
     helpers.query_all_server_info(plan, nodes + new_nodes)
 
-    plan.print("  PASS: Late-joining goXRPL node synced and serves consistent state")
+    plan.print("  PASS: Late-joining go-xrpl node synced and serves consistent state")
     return "passed"

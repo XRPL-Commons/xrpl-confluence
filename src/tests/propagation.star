@@ -11,8 +11,8 @@ def run(plan, nodes):
     """Run transaction propagation tests.
 
     Test scenarios:
-    1. Submit tx to rippled -> verify goXRPL receives it
-    2. Submit tx to goXRPL -> verify rippled receives it
+    1. Submit tx to rippled -> verify go-xrpl receives it
+    2. Submit tx to go-xrpl -> verify rippled receives it
 
     Args:
         plan: Kurtosis plan object.
@@ -32,14 +32,14 @@ def run(plan, nodes):
         helpers.wait_for_ledger_seq(plan, node, 3, timeout = "120s")
     plan.print("Network is live.")
 
-    # Test 1: rippled -> goXRPL propagation
-    plan.print("Test: tx submitted to rippled propagates to goXRPL")
+    # Test 1: rippled -> go-xrpl propagation
+    plan.print("Test: tx submitted to rippled propagates to go-xrpl")
     results["rippled_to_goxrpl"] = _test_rippled_to_goxrpl(
         plan, rippled_nodes, goxrpl_nodes,
     )
 
-    # Test 2: goXRPL -> rippled propagation
-    plan.print("Test: tx submitted to goXRPL propagates to rippled")
+    # Test 2: go-xrpl -> rippled propagation
+    plan.print("Test: tx submitted to go-xrpl propagates to rippled")
     results["goxrpl_to_rippled"] = _test_goxrpl_to_rippled(
         plan, rippled_nodes, goxrpl_nodes,
     )
@@ -48,15 +48,15 @@ def run(plan, nodes):
 
 
 def _test_rippled_to_goxrpl(plan, rippled_nodes, goxrpl_nodes):
-    """Submit a Payment via rippled and verify goXRPL sees the result.
+    """Submit a Payment via rippled and verify go-xrpl sees the result.
 
     Uses genesis account to send 100 XRP to TEST_DEST_1. After a few ledger
-    closes, verifies the destination account exists on a goXRPL node.
+    closes, verifies the destination account exists on a go-xrpl node.
 
     Args:
         plan: Kurtosis plan object.
         rippled_nodes: List of rippled node descriptors.
-        goxrpl_nodes: List of goXRPL node descriptors.
+        goxrpl_nodes: List of go-xrpl node descriptors.
 
     Returns:
         Test result string.
@@ -79,7 +79,7 @@ def _test_rippled_to_goxrpl(plan, rippled_nodes, goxrpl_nodes):
     plan.print("  Waiting for tx to be validated on " + target["name"] + "...")
     helpers.wait_for_ledger_seq(plan, target, 6, timeout = "60s")
 
-    # Verify the destination account exists on the goXRPL node.
+    # Verify the destination account exists on the go-xrpl node.
     plan.print("  Checking destination account on " + target["name"])
     plan.wait(
         service_name = target["name"],
@@ -90,12 +90,12 @@ def _test_rippled_to_goxrpl(plan, rippled_nodes, goxrpl_nodes):
         timeout = "60s",
     )
 
-    plan.print("  PASS: Payment from rippled visible on goXRPL")
+    plan.print("  PASS: Payment from rippled visible on go-xrpl")
     return "passed"
 
 
 def _test_goxrpl_to_rippled(plan, rippled_nodes, goxrpl_nodes):
-    """Submit a Payment via goXRPL and verify rippled sees the result.
+    """Submit a Payment via go-xrpl and verify rippled sees the result.
 
     Uses genesis account to send 100 XRP to TEST_DEST_2. After a few ledger
     closes, verifies the destination account exists on a rippled node.
@@ -103,7 +103,7 @@ def _test_goxrpl_to_rippled(plan, rippled_nodes, goxrpl_nodes):
     Args:
         plan: Kurtosis plan object.
         rippled_nodes: List of rippled node descriptors.
-        goxrpl_nodes: List of goXRPL node descriptors.
+        goxrpl_nodes: List of go-xrpl node descriptors.
 
     Returns:
         Test result string.
@@ -137,5 +137,5 @@ def _test_goxrpl_to_rippled(plan, rippled_nodes, goxrpl_nodes):
         timeout = "60s",
     )
 
-    plan.print("  PASS: Payment from goXRPL visible on rippled")
+    plan.print("  PASS: Payment from go-xrpl visible on rippled")
     return "passed"

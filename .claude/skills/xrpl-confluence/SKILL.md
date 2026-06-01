@@ -5,7 +5,7 @@ description: Drive the xrpl-confluence fuzzing harness via the `confluence` CLI 
 
 # xrpl-confluence — fuzzing harness skill
 
-`xrpl-confluence` orchestrates a multi-node XRPL test network (goXRPL + rippled) inside a Kurtosis enclave and runs a fuzz sidecar against it. There are **two CLI surfaces**:
+`xrpl-confluence` orchestrates a multi-node XRPL test network (go-xrpl + rippled) inside a Kurtosis enclave and runs a fuzz sidecar against it. There are **two CLI surfaces**:
 
 1. **`confluence` CLI** (preferred) — Cobra binary at `sidecar/cmd/confluence/`. Scenario-driven. This is the canonical interface.
 2. **`Makefile` recipes** (legacy) — `make soak` / `make chaos` flows kept for backward compatibility.
@@ -135,7 +135,7 @@ confluence down xrpl-soak             # named
 The Makefile predates the CLI. Use it only when explicitly asked.
 
 ```bash
-make soak                                # 2 goXRPL + 3 rippled, tx_rate=5
+make soak                                # 2 go-xrpl + 3 rippled, tx_rate=5
 make soak GOXRPL_COUNT=3 RIPPLED_COUNT=5 TX_RATE=10 OBSERVABILITY=1
 make soak-status / soak-tail / soak-pull / soak-down
 

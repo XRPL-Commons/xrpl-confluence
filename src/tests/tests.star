@@ -14,9 +14,9 @@ def run(plan, nodes, suite = "all", goxrpl_image = None, network_config = None, 
 
     Args:
         plan: Kurtosis plan object.
-        nodes: List of all node descriptors (rippled + goXRPL).
+        nodes: List of all node descriptors (rippled + go-xrpl).
         suite: Which suite to run - "all", "propagation", "sync", "consensus", "fuzz", "replay", "shrink".
-        goxrpl_image: Docker image for goXRPL (needed by sync tests to launch new nodes).
+        goxrpl_image: Docker image for go-xrpl (needed by sync tests to launch new nodes).
         network_config: Shared network configuration artifact.
         shrink_args: Dict with shrink-suite inputs: shrink_artifact, shrink_max_step, optionally seed/accounts/validate_timeout.
 

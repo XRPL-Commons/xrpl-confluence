@@ -1,6 +1,6 @@
 """Consensus tests.
 
-Verifies that rippled and goXRPL validators can participate in the same
+Verifies that rippled and go-xrpl validators can participate in the same
 consensus network and agree on validated ledgers.
 """
 
@@ -17,7 +17,7 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
     Args:
         plan: Kurtosis plan object.
         nodes: List of all node descriptors.
-        goxrpl_image: Docker image for goXRPL (unused in smoke tests).
+        goxrpl_image: Docker image for go-xrpl (unused in smoke tests).
         network_config: Shared network configuration artifact (unused in smoke tests).
 
     Returns:
@@ -37,9 +37,9 @@ def run(plan, nodes, goxrpl_image = None, network_config = None):
 
 
 def _test_mixed_consensus(plan, nodes):
-    """Verify that a mixed network of rippled + goXRPL advances ledgers.
+    """Verify that a mixed network of rippled + go-xrpl advances ledgers.
 
-    Waits for every node (both rippled and goXRPL) to reach validated ledger
+    Waits for every node (both rippled and go-xrpl) to reach validated ledger
     sequence >= 5. If any node fails to reach this within the timeout, the
     Kurtosis plan fails, which signals a consensus issue.
 

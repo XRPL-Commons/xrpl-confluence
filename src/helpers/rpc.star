@@ -3,7 +3,7 @@
 Provides reusable PostHttpRequestRecipe builders and common wait patterns
 to eliminate boilerplate across test files.
 
-Note: goXRPL nodes currently operate in "full" mode (syncing) rather than
+Note: go-xrpl nodes currently operate in "full" mode (syncing) rather than
 "proposing" mode, so `validated_ledger` may not exist in server_info.
 All wait functions use `closed_ledger.seq` which is always present.
 For hash comparison, we use the `ledger` RPC with a specific index which
@@ -14,7 +14,7 @@ works regardless of validation state.
 GENESIS_ADDRESS = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
 GENESIS_SECRET = "snoPBrXtMeMyMHUVTgbuqAfg1SUTb"
 
-# Fixed test destination addresses (generated with valid checksums via goXRPL crypto).
+# Fixed test destination addresses (generated with valid checksums via go-xrpl crypto).
 TEST_DEST_1 = "ra8sezk7XT7JRgE1myhUBZJUDCUH3qrWMU"
 TEST_DEST_2 = "rDimGkRfnAufCwoKbrAXSYDCcjgth548s2"
 
@@ -140,7 +140,7 @@ def wait_for_ledger_seq(plan, node, min_seq, timeout = "120s"):
     returns {"error":"noCurrent","error_code":16}. The kurtosis recipe
     extractor then errors with "No field '.result.ledger_current_index'", and
     this wait times out. If you hit that, check that goxrpl:latest is built
-    from current goXRPL main (passive consensus / emit-validations support).
+    from current go-xrpl main (passive consensus / emit-validations support).
 
     Args:
         plan: Kurtosis plan object.
