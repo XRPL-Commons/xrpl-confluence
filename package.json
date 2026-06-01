@@ -1,0 +1,21 @@
+{
+  "name": "xrpl-confluence",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Testing harness for verifying interoperability between XRPL node implementations",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XRPL-Commons/xrpl-confluence"
+  },
+  "license": "MIT",
+  "scripts": {
+    "docs:dev": "pnpm --filter @xrpl-confluence/docs run dev",
+    "docs:build": "pnpm --filter @xrpl-confluence/docs run build",
+    "docs:preview": "pnpm --filter @xrpl-confluence/docs run preview"
+  },
+  "packageManager": "pnpm@10.18.3",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
