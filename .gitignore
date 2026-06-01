@@ -24,3 +24,8 @@ bin/
 
 # Per-machine discovery file from `confluence up`
 .confluence/
+
+# Docs site (VitePress)
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
