@@ -149,7 +149,14 @@ func retrySubmit(maxRetries int, fn func() (*rpcclient.SubmitResult, error)) err
 		if res.EngineResult == "tesSUCCESS" || res.EngineResult == "terQUEUED" {
 			return nil
 		}
-		if strings.HasPrefix(res.EngineResult, "tel") || strings.HasPrefix(res.EngineResult, "ter") {
+		// tel*/ter* are transient (queue full, not-ready). tefPAST_SEQ is also
+		// transient for the submit-with-secret path: each retry re-submits, so
+		// rippled re-auto-fills a fresh Sequence. Under the dense setup mesh an
+		// auto-filled Sequence can go stale between fill and apply (or a queue
+		// drop leaves a gap); a resubmit converges once the account queue drains.
+		if strings.HasPrefix(res.EngineResult, "tel") ||
+			strings.HasPrefix(res.EngineResult, "ter") ||
+			res.EngineResult == "tefPAST_SEQ" {
 			lastErr = fmt.Errorf("engine=%s (%s)", res.EngineResult, res.EngineResultMessage)
 			continue
 		}
