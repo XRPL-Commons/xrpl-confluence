@@ -19,6 +19,7 @@ type Wallet struct {
 	Index          int
 	ClassicAddress string
 	Seed           string // XRPL "s..." secret, suitable for sign-and-submit RPC
+	PublicKey      string // hex-encoded signing public key (channel keys, etc.)
 	Tier           Tier
 }
 
@@ -55,5 +56,6 @@ func DeriveWallet(fuzzSeed uint64, index int) (*Wallet, error) {
 		Index:          index,
 		ClassicAddress: w.ClassicAddress.String(),
 		Seed:           w.Seed,
+		PublicKey:      w.PublicKey,
 	}, nil
 }

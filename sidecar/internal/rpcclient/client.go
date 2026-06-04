@@ -466,6 +466,40 @@ func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
 	}, nil
 }
 
+// AccountNFTs returns the NFTokenIDs currently owned by an account, via the
+// `account_nfts` RPC. Used by the fuzzer to discover the IDs of freshly minted
+// NFTokens so it can reference them in NFTokenBurn / NFTokenCreateOffer.
+func (c *Client) AccountNFTs(account string) ([]string, error) {
+	raw, err := c.Call("account_nfts", map[string]any{"account": account})
+	if err != nil {
+		return nil, err
+	}
+	var wrapper struct {
+		AccountNFTs []struct {
+			NFTokenID string `json:"NFTokenID"`
+		} `json:"account_nfts"`
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse account_nfts: %w", err)
+	}
+	if wrapper.Status == "error" || wrapper.Error != "" {
+		code := wrapper.Error
+		if code == "" {
+			code = "error"
+		}
+		return nil, fmt.Errorf("account_nfts %s: %s", account, code)
+	}
+	ids := make([]string, 0, len(wrapper.AccountNFTs))
+	for _, n := range wrapper.AccountNFTs {
+		if n.NFTokenID != "" {
+			ids = append(ids, n.NFTokenID)
+		}
+	}
+	return ids, nil
+}
+
 // TxResult holds the relevant fields from a `tx` RPC response.
 type TxResult struct {
 	TransactionResult string          `json:"transaction_result"`
