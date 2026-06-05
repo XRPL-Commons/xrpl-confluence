@@ -12,10 +12,7 @@ func (g *Generator) MPTokenAuthorize(r *mathrand.Rand) (*Tx, error) {
 	if !ok {
 		return nil, fmt.Errorf("no tracked MPT issuances to authorize")
 	}
-	holder := g.pool.Pick(r)
-	for holder.ClassicAddress == ref.Issuer {
-		holder = g.pool.Pick(r)
-	}
+	holder := g.pickOtherThan(r, ref.Issuer)
 	return &Tx{
 		Fields: map[string]any{
 			"TransactionType":   "MPTokenAuthorize",

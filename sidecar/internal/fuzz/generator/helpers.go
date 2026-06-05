@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	mathrand "math/rand/v2"
 	"strings"
+
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/fuzz/accounts"
 )
 
 // Shared helpers for the transaction builders.
@@ -19,12 +21,19 @@ const (
 // address. Reference tx types (OfferCancel, CheckCancel, …) use it to sign as
 // the object's owner.
 func (g *Generator) seedFor(address string) (string, bool) {
-	for _, w := range g.pool.All() {
-		if w.ClassicAddress == address {
-			return w.Seed, true
-		}
+	seed, ok := g.seeds[address]
+	return seed, ok
+}
+
+// pickOtherThan returns a random pool wallet whose address differs from
+// exclude. Every builder that needs two distinct parties relies on a pool of
+// >= 2 accounts (see Pool.PickTwoDistinct), so this terminates quickly.
+func (g *Generator) pickOtherThan(r *mathrand.Rand, exclude string) *accounts.Wallet {
+	w := g.pool.Pick(r)
+	for w.ClassicAddress == exclude {
+		w = g.pool.Pick(r)
 	}
-	return "", false
+	return w
 }
 
 // randHexBytes returns n random bytes as an uppercase hex string — the form

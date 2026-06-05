@@ -13,10 +13,7 @@ func (g *Generator) NFTokenAcceptOffer(r *mathrand.Rand) (*Tx, error) {
 	if !ok || !ref.Sell {
 		return nil, fmt.Errorf("no tracked sell offers to accept")
 	}
-	buyer := g.pool.Pick(r)
-	for buyer.ClassicAddress == ref.Owner {
-		buyer = g.pool.Pick(r)
-	}
+	buyer := g.pickOtherThan(r, ref.Owner)
 	return &Tx{
 		Fields: map[string]any{
 			"TransactionType":  "NFTokenAcceptOffer",
