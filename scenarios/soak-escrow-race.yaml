@@ -1,0 +1,28 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: soak-escrow-race
+  description: 3 rippled + 2 go-xrpl, soak workload, 15 accounts, escrow capture
+topology:
+  rippled:
+    count: 3
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 2
+    image: goxrpl:race
+workload:
+  kind: soak
+  tx_rate: 5
+  accounts: 15
+  rotate_every: 1000
+  mutation_rate: 0.05
+observability:
+  enabled: false
+budget:
+  duration: 10m
+  stop_on:
+    - first_divergence
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health
