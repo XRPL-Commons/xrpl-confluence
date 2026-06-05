@@ -1,0 +1,39 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: issue724-doublefault
+  description: >-
+    #724 reproducer. 3 rippled + 2 go-xrpl => quorum is 4-of-5, so the two
+    go-xrpl are collectively quorum-critical. The schedule restarts BOTH go-xrpl
+    at the same step (a double-fault): the network loses quorum and halts (no
+    validated tip), then the go-xrpl must rejoin from behind. Symptom under the
+    bug: a go-xrpl wedges in wrongLedger / tracking, unable to adopt the
+    network's validated tip (validated frozen, our_pos_seq=0) -> the
+    consensus_liveness oracle fires "no validated_seq advance". Healthy
+    behaviour: both go-xrpl rejoin and the network returns to lockstep after
+    each fault. Repeated faults raise the odds of hitting the (stochastic) wedge.
+topology:
+  rippled:
+    count: 3
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 2
+    image: goxrpl:latest
+workload:
+  kind: fuzz
+  tx_rate: 8
+  accounts: 15
+  rotate_every: 1000
+  mutation_rate: 0.0
+chaos:
+  schedule:
+    - {step: 40,  recover_after: 15, type: restart, container: "goxrpl-*"}
+    - {step: 120, recover_after: 15, type: restart, container: "goxrpl-*"}
+    - {step: 200, recover_after: 15, type: restart, container: "goxrpl-*"}
+    - {step: 300, recover_after: 18, type: restart, container: "goxrpl-*"}
+budget:
+  duration: 25m
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health
