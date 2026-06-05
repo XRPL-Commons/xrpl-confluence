@@ -26,11 +26,18 @@ workload:
   rotate_every: 1000
   mutation_rate: 0.0
 chaos:
+  # Target BOTH go-xrpl explicitly at each step: a wildcard (goxrpl-*) resolves
+  # to a single container (runtime resolveID returns the first match), so it
+  # would NOT cause the simultaneous double-fault this reproducer needs.
   schedule:
-    - {step: 40,  recover_after: 15, type: restart, container: "goxrpl-*"}
-    - {step: 120, recover_after: 15, type: restart, container: "goxrpl-*"}
-    - {step: 200, recover_after: 15, type: restart, container: "goxrpl-*"}
-    - {step: 300, recover_after: 18, type: restart, container: "goxrpl-*"}
+    - {step: 40,  recover_after: 15, type: restart, container: goxrpl-0}
+    - {step: 40,  recover_after: 15, type: restart, container: goxrpl-1}
+    - {step: 120, recover_after: 15, type: restart, container: goxrpl-0}
+    - {step: 120, recover_after: 15, type: restart, container: goxrpl-1}
+    - {step: 200, recover_after: 15, type: restart, container: goxrpl-0}
+    - {step: 200, recover_after: 15, type: restart, container: goxrpl-1}
+    - {step: 300, recover_after: 18, type: restart, container: goxrpl-0}
+    - {step: 300, recover_after: 18, type: restart, container: goxrpl-1}
 budget:
   duration: 25m
 oracles:

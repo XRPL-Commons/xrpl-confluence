@@ -58,3 +58,17 @@ avalanche_state=stuck our_pos_seq=0`. The relevant code is
 - `scenarios/soak-5r1g.yaml` — 5 rippled + 1 go-xrpl (quorum 5). Pause 2 rippled →
   halt → unpause → all recover. Confirms rippled handles the double-fault, so any
   go-xrpl non-recovery is goXRPL-specific.
+
+## Harness fix bundled with this kit
+This kit also fixes a chaos-scheduler bug it exposed: `recover` fired only on an
+exact `pending[step]` match while `apply` fired on `step >= trigger`. The soak
+loop ticks coarsely, so `recoverAt` was routinely skipped and a `restart`
+event's Stop was never followed by Start — the node stayed down and the rejoin
+was never tested. `recover` now fires on the first tick at/after `recoverAt`
+(`sidecar/internal/fuzz/chaos/scheduler.go`, regression test
+`TestScheduler_RecoverFiresWhenTickSkipsRecoverAt`). **Rebuild the sidecar before
+running:** `./scripts/build-sidecar.sh`.
+
+The scenario targets `goxrpl-0` and `goxrpl-1` explicitly (not `goxrpl-*`): a
+wildcard resolves to a single container (runtime `resolveID` returns the first
+match), so it would not produce the simultaneous double-fault.
