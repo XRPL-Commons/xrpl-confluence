@@ -276,13 +276,11 @@ func Run(ctx context.Context, cfg Config) (*Stats, error) {
 			}
 		}
 
-		// Tracker feedback: on successful EscrowCreate, record (owner, sequence) so
-		// EscrowFinish / EscrowCancel become eligible in future picks.
-		if tx.TransactionType() == "EscrowCreate" && res.Sequence > 0 {
-			if account, ok := tx.Fields["Account"].(string); ok {
-				gen.Tracker().Escrows().Record(account, res.Sequence)
-			}
-		}
+		// Tracker feedback: record any object this tx created so the reference
+		// tx types (EscrowFinish, OfferCancel, CheckCash, MPTokenAuthorize, …)
+		// become eligible in future picks. `submit` lets it discover minted
+		// NFTokenIDs via account_nfts.
+		gen.RecordSuccess(tx, res.Sequence, submit)
 
 		// Periodically run layer-1 oracle.
 		if cfg.BatchClose > 0 && i%10 == 9 {

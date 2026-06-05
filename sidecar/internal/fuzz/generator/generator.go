@@ -26,11 +26,16 @@ type Generator struct {
 	pool    *accounts.Pool
 	mutator *Mutator
 	tracker *Tracker
+	seeds   map[string]string // classic address → secret seed, for signing reference txs
 }
 
 // New constructs a Generator over the given pool.
 func New(pool *accounts.Pool) *Generator {
-	return &Generator{pool: pool, mutator: NewMutator(), tracker: NewTracker()}
+	seeds := make(map[string]string, len(pool.All()))
+	for _, w := range pool.All() {
+		seeds[w.ClassicAddress] = w.Seed
+	}
+	return &Generator{pool: pool, mutator: NewMutator(), tracker: NewTracker(), seeds: seeds}
 }
 
 // Mutator exposes the Generator's mutator so callers can apply mutations

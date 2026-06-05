@@ -288,6 +288,11 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 		})
 		step++
 
+		// Tracker feedback: record any object this tx created so the reference
+		// tx types (EscrowFinish, OfferCancel, CheckCash, …) become eligible in
+		// future picks. `submit` lets it discover minted NFTokenIDs.
+		gen.RecordSuccess(tx, res.Sequence, submit)
+
 		if res.TxHash != "" && cfg.oracleEnabled("state_diff") {
 			if cmp := orc.CompareTxResult(ctx, res.TxHash); !cmp.Agreed {
 				atomic.AddInt64(&stats.Divergences, 1)
