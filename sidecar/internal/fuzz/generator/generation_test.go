@@ -25,6 +25,7 @@ var expectedNewTypes = []string{
 	"CredentialCreate", "CredentialAccept", "CredentialDelete",
 	"PermissionedDomainSet", "PermissionedDomainDelete",
 	"MPTokenIssuanceCreate", "MPTokenAuthorize", "MPTokenIssuanceSet", "MPTokenIssuanceDestroy",
+	"LedgerStateFix",
 }
 
 // seedAllTrackers records one object in every sub-tracker so that the reference
