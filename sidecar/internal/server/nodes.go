@@ -53,6 +53,12 @@ type NodesResponse struct {
 	Nodes     []Node `json:"nodes"`
 }
 
+// maxValidatedHistorySeqs bounds how many recent validated ledgers we retain
+// per node for divergence detection. A fork stays detectable while it is
+// within this many ledgers of the fleet tip — at ~3s/ledger that is roughly
+// 25 minutes, far longer than any divergence takes to surface.
+const maxValidatedHistorySeqs = 512
+
 // NodePoller polls each configured node on a fixed interval.
 type NodePoller struct {
 	cfgs     []NodeConfig
@@ -60,6 +66,13 @@ type NodePoller struct {
 
 	mu    sync.RWMutex
 	nodes map[string]Node
+	// history retains each node's recent validated (seq -> hash) observations.
+	// Divergence detection compares nodes at a COMMON seq rather than only at
+	// their current tip: a wedge/partition fork freezes the diverged node's
+	// tip while the quorum advances past it, so the two are never at the same
+	// tip in one snapshot — but they DID both validate the fork seq, with
+	// different hashes, and that conflict lives here.
+	history map[string]map[int]string
 
 	busMu    sync.RWMutex
 	eventBus *EventBus
@@ -78,6 +91,7 @@ func NewNodePoller(cfg []NodeConfig, interval time.Duration) *NodePoller {
 		cfgs:     cfg,
 		interval: interval,
 		nodes:    nodes,
+		history:  make(map[string]map[int]string, len(cfg)),
 		stopCh:   make(chan struct{}),
 	}
 }
@@ -117,19 +131,62 @@ func (p *NodePoller) Snapshot() NodesResponse {
 	}
 }
 
+// recordValidatedLocked stores a node's validated (seq -> hash) observation in
+// the bounded history. Caller must hold p.mu. Entries older than
+// maxValidatedHistorySeqs below the node's newest seq are pruned so memory
+// stays bounded even on a node that validates forever.
+func (p *NodePoller) recordValidatedLocked(node string, seq int, hash string) {
+	h := p.history[node]
+	if h == nil {
+		h = make(map[int]string)
+		p.history[node] = h
+	}
+	h[seq] = hash
+	// Keep the newest maxValidatedHistorySeqs seqs: (seq-N, seq].
+	cutoff := seq - maxValidatedHistorySeqs
+	if cutoff <= 0 {
+		return
+	}
+	for s := range h {
+		if s <= cutoff {
+			delete(h, s)
+		}
+	}
+}
+
 // DivergenceSnapshot satisfies finding.Snapshotter. It returns one entry per
-// node that has a non-empty validated ledger.
+// (node, validated seq) pair observed in the recent history window — not just
+// each node's current tip. This lets the divergence oracle compare nodes at a
+// common seq even when their tips have drifted apart, which is the only way to
+// catch a wedge/partition fork where the diverged node's tip freezes while the
+// rest of the fleet advances past it.
 func (p *NodePoller) DivergenceSnapshot() []finding.DivergenceInput {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := make([]finding.DivergenceInput, 0, len(p.nodes))
-	for _, n := range p.nodes {
-		if n.ValidatedLedger != nil && n.ValidatedLedger.Hash != "" && n.ValidatedLedger.Seq > 0 {
-			out = append(out, finding.DivergenceInput{
-				Node: n.Name,
-				Seq:  n.ValidatedLedger.Seq,
-				Hash: n.ValidatedLedger.Hash,
-			})
+	out := make([]finding.DivergenceInput, 0, len(p.history))
+	for node, seqHashes := range p.history {
+		for seq, hash := range seqHashes {
+			out = append(out, finding.DivergenceInput{Node: node, Seq: seq, Hash: hash})
+		}
+	}
+	return out
+}
+
+// validatedHashesBySeq returns, for the recent history window, a map of
+// seq -> (node -> validated hash). stateDiff uses it to surface a fork at any
+// common seq, not only the fleet's modal tip.
+func (p *NodePoller) validatedHashesBySeq() map[int]map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make(map[int]map[string]string)
+	for node, seqHashes := range p.history {
+		for seq, hash := range seqHashes {
+			byNode := out[seq]
+			if byNode == nil {
+				byNode = make(map[string]string)
+				out[seq] = byNode
+			}
+			byNode[node] = hash
 		}
 	}
 	return out
@@ -219,6 +276,9 @@ func (p *NodePoller) poll(cfg NodeConfig) {
 	if info.ValidatedLedger.Seq > 0 || info.ValidatedLedger.Hash != "" {
 		ref := LedgerRef{Seq: info.ValidatedLedger.Seq, Hash: info.ValidatedLedger.Hash}
 		n.ValidatedLedger = &ref
+		if ref.Seq > 0 && ref.Hash != "" {
+			p.recordValidatedLocked(cfg.Name, ref.Seq, ref.Hash)
+		}
 	}
 	if info.ClosedLedger.Seq > 0 || info.ClosedLedger.Hash != "" {
 		ref := LedgerRef{Seq: info.ClosedLedger.Seq, Hash: info.ClosedLedger.Hash}
