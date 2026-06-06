@@ -184,3 +184,45 @@ func TestNodePoller_JSONShape(t *testing.T) {
 		t.Error("missing nodes in JSON")
 	}
 }
+
+// TestNodePoller_DivergenceSnapshotSpansHistory verifies the snapshot fed to
+// the divergence oracle covers the validated-history window, not just current
+// tips — so a wedge fork (node frozen at the fork seq while the fleet advances)
+// still produces two conflicting hashes at the common seq.
+func TestNodePoller_DivergenceSnapshotSpansHistory(t *testing.T) {
+	p := NewNodePoller([]NodeConfig{
+		{Name: "a", Type: "goxrpl"},
+		{Name: "b", Type: "rippled"},
+	}, time.Hour)
+	p.mu.Lock()
+	p.recordValidatedLocked("a", 100, "FORK_A") // a forked and wedged at 100
+	p.recordValidatedLocked("b", 100, "GOOD_100")
+	p.recordValidatedLocked("b", 105, "GOOD_105") // b advanced past the fork
+	p.mu.Unlock()
+
+	got := p.DivergenceSnapshot()
+	hashesAt100 := map[string]bool{}
+	for _, in := range got {
+		if in.Seq == 100 {
+			hashesAt100[in.Hash] = true
+		}
+	}
+	if !hashesAt100["FORK_A"] || !hashesAt100["GOOD_100"] {
+		t.Fatalf("seq 100 must carry both forked hashes, got %v (full: %v)", hashesAt100, got)
+	}
+}
+
+// TestNodePoller_HistoryPrunes keeps the window bounded so a long run cannot
+// grow the per-node history without limit.
+func TestNodePoller_HistoryPrunes(t *testing.T) {
+	p := NewNodePoller([]NodeConfig{{Name: "a", Type: "rippled"}}, time.Hour)
+	p.mu.Lock()
+	for seq := 1; seq <= maxValidatedHistorySeqs+200; seq++ {
+		p.recordValidatedLocked("a", seq, "h")
+	}
+	n := len(p.history["a"])
+	p.mu.Unlock()
+	if n > maxValidatedHistorySeqs {
+		t.Fatalf("history not pruned: %d entries, want <= %d", n, maxValidatedHistorySeqs)
+	}
+}

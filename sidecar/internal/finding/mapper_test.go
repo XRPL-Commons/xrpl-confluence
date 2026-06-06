@@ -20,8 +20,12 @@ func TestMapDivergence_KindMapping(t *testing.T) {
 		{"tx_result", api.KindStateDivergence},
 		{"metadata", api.KindStateDivergence},
 		{"invariant", api.KindChaosViolation},
+		{"chaos", api.KindChaosViolation},
 		{"crash", api.KindNodeCrash},
-		{"garbage", api.KindStateDivergence}, // unknown → safe default
+		{"consensus_stall", api.KindConsensusStall}, // liveness, NOT a state fork
+		{"peer_drop", api.KindPeerDrop},             // liveness, NOT a state fork
+		{"setup_failure", api.KindFuzzFailure},
+		{"garbage", api.KindFuzzFailure}, // unknown → safe default, never state_divergence
 	}
 	for _, tc := range cases {
 		t.Run(tc.corpusKind, func(t *testing.T) {

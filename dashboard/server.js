@@ -67,6 +67,10 @@ function parseFuzzMetrics(text) {
     txs_applied_total: 0,
     divergences_total: 0,
     divergences_total_by_layer: {},
+    // Liveness events (consensus_stall / peer_drop) are tracked separately:
+    // every node still AGREES, so they are not state divergences.
+    stalls_total: 0,
+    stalls_total_by_layer: {},
     crashes_total: 0,
     accounts_active: 0,
     corpus_size: 0,
@@ -82,9 +86,18 @@ function parseFuzzMetrics(text) {
     if (name === "fuzz_txs_submitted_total") out.txs_submitted_total += value;
     else if (name === "fuzz_txs_applied_total") out.txs_applied_total += value;
     else if (name === "fuzz_divergences_total") {
-      out.divergences_total += value;
-      const layer = (labelsRaw && labelsRaw.match(/layer="([^"]+)"/)) || [];
-      if (layer[1]) out.divergences_total_by_layer[layer[1]] = (out.divergences_total_by_layer[layer[1]] || 0) + value;
+      const layerMatch = (labelsRaw && labelsRaw.match(/layer="([^"]+)"/)) || [];
+      const layer = layerMatch[1];
+      // consensus_stall / peer_drop are liveness failures, not ledger forks —
+      // bucket them away from divergences so a paused-but-agreeing network
+      // never reads as a desync.
+      if (layer === "consensus_stall" || layer === "peer_drop") {
+        out.stalls_total += value;
+        out.stalls_total_by_layer[layer] = (out.stalls_total_by_layer[layer] || 0) + value;
+      } else {
+        out.divergences_total += value;
+        if (layer) out.divergences_total_by_layer[layer] = (out.divergences_total_by_layer[layer] || 0) + value;
+      }
     }
     else if (name === "fuzz_crashes_total") out.crashes_total += value;
     else if (name === "fuzz_accounts_active") out.accounts_active = value;

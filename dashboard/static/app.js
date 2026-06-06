@@ -290,12 +290,14 @@
     const converge = convergeArr.length ? `${(convergeArr.reduce((a, b) => a + b, 0) / convergeArr.length).toFixed(1)}s` : "—";
     const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
     const divergences = s.fuzz?.divergences_total ?? 0;
+    const stalls = s.fuzz?.stalls_total ?? 0;
 
     const kpis = [
       { lbl: "Ledger",   num: maxSeq ? maxSeq.toLocaleString("en-US") : "—" },
       { lbl: "Converge", num: converge },
       { lbl: "Spread",   num: spread },
       { lbl: "Diverge",  num: divergences },
+      { lbl: "Stall",    num: stalls },
       { lbl: "Online",   num: `${ok.length} / ${nodes.length}` },
     ];
     el.innerHTML = kpis.map((k) => `<div class="kpi"><div class="kpi-lbl">${k.lbl}</div><div class="kpi-num">${k.num}</div></div>`).join("");
@@ -749,6 +751,7 @@
       { lbl: "Submitted",   num: fuzz.txs_submitted_total ?? "—" },
       { lbl: "Applied",     num: fuzz.txs_applied_total ?? "—" },
       { lbl: "Divergences", num: fuzz.divergences_total ?? "—" },
+      { lbl: "Stalls",      num: fuzz.stalls_total ?? "—" },
       { lbl: "Crashes",     num: fuzz.crashes_total ?? "—" },
       { lbl: "Seed",        num: fuzz.current_seed ?? "—", mono: true },
     ];
@@ -806,11 +809,13 @@
     const minSeq = seqs.length ? Math.min(...seqs) : null;
     const spread = maxSeq != null && minSeq != null ? maxSeq - minSeq : 0;
     const divergences = s.fuzz?.divergences_total ?? 0;
+    const stalls = s.fuzz?.stalls_total ?? 0;
     const crashes = s.fuzz?.crashes_total ?? 0;
     const rows = [
       { item: "Ledger spread", status: spread <= 1 ? "synced" : `${spread} ledgers apart`, count: spread },
       { item: "Unreachable nodes", status: nodes.length - ok.length === 0 ? "none" : "needs attention", count: nodes.length - ok.length },
       { item: "Fuzzer divergences", status: divergences === 0 ? "clean" : "investigating", count: divergences },
+      { item: "Consensus stalls", status: stalls === 0 ? "clean" : "liveness", count: stalls },
       { item: "Fuzzer crashes", status: crashes === 0 ? "clean" : "open", count: crashes },
     ];
     document.querySelector("#overview-summary tbody").innerHTML = rows

@@ -1,13 +1,17 @@
 {
   "txs_submitted_total": 12450,
   "txs_applied_total": 12421,
-  "divergences_total": 7,
+  "divergences_total": 4,
   "crashes_total": 1,
   "current_seed": "f3a1c8d2",
   "divergences_total_by_layer": {
-    "consensus": 3,
-    "ledger": 2,
-    "tx-engine": 1,
-    "amm": 1
+    "state_hash": 2,
+    "tx_result": 1,
+    "metadata": 1
+  },
+  "stalls_total": 3,
+  "stalls_total_by_layer": {
+    "consensus_stall": 2,
+    "peer_drop": 1
   }
 }

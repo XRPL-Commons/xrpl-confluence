@@ -25,6 +25,16 @@ func makePoller(nodes map[string]Node) *NodePoller {
 	return p
 }
 
+// setHistory injects validated (seq -> hash) observations into the poller's
+// history window, simulating what poll() accumulates over time.
+func setHistory(p *NodePoller, node string, seqHashes map[int]string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for seq, hash := range seqHashes {
+		p.recordValidatedLocked(node, seq, hash)
+	}
+}
+
 func doStateDiff(t *testing.T, srv *Server, query string) (int, StateDiffResponse) {
 	t.Helper()
 	url := "/v1/state/diff"
@@ -142,6 +152,64 @@ func TestStateDiff_BadAtParam(t *testing.T) {
 	e := errResp["error"]
 	if e["code"] != "bad_request" {
 		t.Errorf("error code: got %q want bad_request", e["code"])
+	}
+}
+
+// TestStateDiff_WedgeForkAtCommonSeq is the regression guard for the
+// "front-end says nothing when there IS a desync" half of the bug: a node
+// forks and wedges at seq 100 while the rest of the fleet advances to 105.
+// The modal tip (105) is clean, so the old tip-only comparison reported
+// Diverged=false. With history, the conflict at the common seq 100 surfaces.
+func TestStateDiff_WedgeForkAtCommonSeq(t *testing.T) {
+	nodes := map[string]Node{
+		"a": {Name: "a", Type: "goxrpl", ValidatedLedger: &LedgerRef{Seq: 100, Hash: "FORK_A"}},
+		"b": {Name: "b", Type: "rippled", ValidatedLedger: &LedgerRef{Seq: 105, Hash: "GOOD_105"}},
+		"c": {Name: "c", Type: "rippled", ValidatedLedger: &LedgerRef{Seq: 105, Hash: "GOOD_105"}},
+	}
+	p := makePoller(nodes)
+	// a forked at 100; b and c validated the canonical 100 before moving on.
+	setHistory(p, "a", map[int]string{100: "FORK_A"})
+	setHistory(p, "b", map[int]string{100: "GOOD_100", 105: "GOOD_105"})
+	setHistory(p, "c", map[int]string{100: "GOOD_100", 105: "GOOD_105"})
+	srv := New(WithNodePoller(p))
+
+	code, resp := doStateDiff(t, srv, "")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if !resp.Diverged {
+		t.Fatal("diverged: want true — node a forked at seq 100")
+	}
+	if resp.Ledger != 100 {
+		t.Errorf("ledger: got %d want 100 (the fork point)", resp.Ledger)
+	}
+	if resp.HashByNode["a"] != "FORK_A" || resp.HashByNode["b"] != "GOOD_100" {
+		t.Errorf("hash_by_node: want a=FORK_A b=GOOD_100, got %v", resp.HashByNode)
+	}
+}
+
+// TestStateDiff_AtParamIgnoresHistoryScan confirms an explicit ?at= answers
+// strictly about that seq and does not get overridden by a fork elsewhere.
+func TestStateDiff_AtParamIgnoresHistoryScan(t *testing.T) {
+	nodes := map[string]Node{
+		"a": {Name: "a", Type: "goxrpl", ValidatedLedger: &LedgerRef{Seq: 100, Hash: "FORK_A"}},
+		"b": {Name: "b", Type: "rippled", ValidatedLedger: &LedgerRef{Seq: 105, Hash: "GOOD_105"}},
+	}
+	p := makePoller(nodes)
+	setHistory(p, "a", map[int]string{100: "FORK_A"})
+	setHistory(p, "b", map[int]string{100: "GOOD_100", 105: "GOOD_105"})
+	srv := New(WithNodePoller(p))
+
+	// Ask specifically about seq 105 — only b is there, so it must be clean.
+	code, resp := doStateDiff(t, srv, "at=105")
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if resp.Diverged {
+		t.Error("diverged: want false at seq 105 despite the fork at 100")
+	}
+	if resp.Ledger != 105 {
+		t.Errorf("ledger: got %d want 105", resp.Ledger)
 	}
 }
 
