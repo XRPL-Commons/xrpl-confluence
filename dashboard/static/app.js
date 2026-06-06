@@ -318,6 +318,13 @@
   let pendingNew = 0;
   let timelinePinned = false;
 
+  // Ledger hashes are case-insensitive hex; nodes disagree on case (rippled
+  // uppercase, goXRPL's stream lowercase) while meaning the same ledger.
+  // Canonicalize before any compare so identical ledgers never read as forked.
+  function normHash(h) {
+    return typeof h === "string" ? h.toUpperCase() : h;
+  }
+
   function pushNodeChain(name, seq, hash, time) {
     const list = nodeChains[name] || (nodeChains[name] = []);
     if (list.length && list[0].seq === seq) {
@@ -341,13 +348,14 @@
       const v = n.validated_ledger?.seq;
       if (v != null && prevValidatedSeqs[n.name] !== v) {
         prevValidatedSeqs[n.name] = v;
-        const row = closeRows.get(v) || { time: now, hash: n.validated_ledger.hash || "", byNode: new Map() };
-        const hashSeen = row.hash || n.validated_ledger.hash || "";
-        const diverged = hashSeen && n.validated_ledger.hash && hashSeen !== n.validated_ledger.hash;
+        const vhash = normHash(n.validated_ledger.hash) || "";
+        const row = closeRows.get(v) || { time: now, hash: vhash, byNode: new Map() };
+        const hashSeen = row.hash || vhash;
+        const diverged = hashSeen && vhash && hashSeen !== vhash;
         row.byNode.set(n.name, diverged ? "diverged" : "match");
         row.hash = hashSeen;
         if (!closeRows.has(v)) { closeRows.set(v, row); pendingNew += 1; }
-        pushNodeChain(n.name, v, n.validated_ledger.hash || "", now);
+        pushNodeChain(n.name, v, vhash, now);
       }
       const c = n.closed_ledger?.seq;
       if (!v && c != null && prevClosedSeqs[n.name] !== c) {
