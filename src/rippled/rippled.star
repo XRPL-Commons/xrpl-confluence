@@ -31,7 +31,7 @@ def launch(plan, count, image, network_config):
             files = {
                 "/etc/rippled": network_config,
             },
-            cmd = ["--conf", "/etc/rippled/rippled-{}.cfg".format(i)],
+            cmd = ["--conf", "/etc/rippled/rippled-{}.cfg".format(i), "--start"],
             labels = {"fuzzer.role": "node"},
         )
 

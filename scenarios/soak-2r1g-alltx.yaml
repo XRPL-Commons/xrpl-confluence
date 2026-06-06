@@ -1,0 +1,31 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: soak-2r1g-alltx
+  description: >-
+    2 rippled + 1 go-xrpl (3-node UNL, quorum 3) — lighter load for the
+    all-tx-types differential vs rippled. The fuzz generator now covers all
+    in-scope tx types; the state_diff oracle compares structural hashes per
+    seq, so any go-xrpl execution/serialization divergence from rippled shows
+    as a transaction_hash/account_hash mismatch.
+topology:
+  rippled:
+    count: 2
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 1
+    image: goxrpl:latest
+workload:
+  kind: soak
+  tx_rate: 30
+  accounts: 25
+  rotate_every: 1000
+  mutation_rate: 0.05
+budget:
+  duration: 20m
+  stop_on:
+    - first_divergence
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health
