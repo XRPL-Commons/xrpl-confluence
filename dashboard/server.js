@@ -20,6 +20,22 @@ const MIME = {
   ".svg": "image/svg+xml",
 };
 
+// XRPL ledger hashes are case-insensitive hex. rippled emits them uppercase,
+// but goXRPL's `ledger` subscribe stream emits lowercase (its server_info is
+// uppercase — an upstream inconsistency). Case is not part of ledger identity,
+// so canonicalize to uppercase before anything compares hashes — otherwise two
+// nodes on the SAME ledger read as diverged on every close.
+function normHash(h) {
+  return typeof h === "string" ? h.toUpperCase() : h;
+}
+
+// normLedger returns a ledger ref ({ seq, hash, ... }) with its hash
+// canonicalized, or null when absent.
+function normLedger(ref) {
+  if (!ref) return null;
+  return ref.hash ? { ...ref, hash: normHash(ref.hash) } : ref;
+}
+
 let config = { nodes: [], poll_interval_ms: 5000, fuzz_metrics_url: "" };
 let nodeStates = {};
 // Rolling log of raw server_info responses per node (last 100 entries).
@@ -181,7 +197,7 @@ function openLedgerStream(node) {
     if (msg.type !== "ledgerClosed") return;
 
     const seq = msg.ledger_index;
-    const hash = msg.ledger_hash;
+    const hash = normHash(msg.ledger_hash);
     if (seq == null || !hash) return;
 
     const ts = new Date().toISOString();
@@ -252,8 +268,8 @@ async function pollNode(node) {
       uptime: info.uptime,
       peers: info.peers,
       complete_ledgers: info.complete_ledgers,
-      validated_ledger: wsValidated || info.validated_ledger || null,
-      closed_ledger: info.closed_ledger || null,
+      validated_ledger: wsValidated || normLedger(info.validated_ledger),
+      closed_ledger: normLedger(info.closed_ledger),
       ledger_current_index: info.ledger_current_index || null,
       last_close: info.last_close || null,
       network_id: info.network_id,
