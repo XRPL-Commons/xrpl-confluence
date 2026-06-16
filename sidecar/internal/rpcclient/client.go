@@ -413,9 +413,19 @@ type AccountInfoResult struct {
 
 // AccountInfo fetches account info.
 func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
-	raw, err := c.Call("account_info", map[string]interface{}{
-		"account": account,
-	})
+	return c.AccountInfoAt(account, "")
+}
+
+// AccountInfoAt is AccountInfo against a specific ledger. ledgerIndex may be
+// "current" (the in-progress open ledger — reflects applied-but-unvalidated
+// txs, used for client-side sequence resync), "validated", a numeric index as
+// a string, or "" to use rippled's default.
+func (c *Client) AccountInfoAt(account, ledgerIndex string) (*AccountInfoResult, error) {
+	params := map[string]interface{}{"account": account}
+	if ledgerIndex != "" {
+		params["ledger_index"] = ledgerIndex
+	}
+	raw, err := c.Call("account_info", params)
 	if err != nil {
 		return nil, err
 	}
@@ -464,6 +474,22 @@ func (c *Client) AccountInfo(account string) (*AccountInfoResult, error) {
 		Balance:  wrapper.AccountData.Balance,
 		Sequence: wrapper.AccountData.Sequence,
 	}, nil
+}
+
+// LedgerCurrentIndex returns the index of the current (in-progress) ledger.
+// Used to stamp LastLedgerSequence client-side without a per-tx round trip.
+func (c *Client) LedgerCurrentIndex() (uint32, error) {
+	raw, err := c.Call("ledger_current", map[string]any{})
+	if err != nil {
+		return 0, err
+	}
+	var lc struct {
+		LedgerCurrentIndex uint32 `json:"ledger_current_index"`
+	}
+	if err := json.Unmarshal(raw, &lc); err != nil {
+		return 0, fmt.Errorf("parse ledger_current: %w", err)
+	}
+	return lc.LedgerCurrentIndex, nil
 }
 
 // AccountNFTs returns the NFTokenIDs currently owned by an account, via the

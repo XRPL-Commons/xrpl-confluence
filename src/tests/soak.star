@@ -40,6 +40,7 @@ def run(plan, nodes, args = {}):
     rotate_every = args.get("rotate_every", 1000)
     mutation_rate = args.get("mutation_rate", 0.0)
     accounts = args.get("accounts", 50)
+    submit_workers = args.get("submit_workers", 0)
     corpus_host_path = args.get("corpus_host_path", "")
 
     # Defence in depth — the user-facing check lives in main.star's
@@ -79,6 +80,7 @@ def run(plan, nodes, args = {}):
         rotate_every = rotate_every,
         mutation_rate = mutation_rate,
         accounts = accounts,
+        submit_workers = submit_workers,
         corpus_host_path = corpus_host_path,
         alert_webhook_url = args.get("alert_webhook_url", ""),
         oracles = args.get("oracles", ""),

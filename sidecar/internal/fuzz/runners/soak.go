@@ -48,6 +48,12 @@ type SoakConfig struct {
 	// all implemented oracles enabled (state_diff, consensus_liveness,
 	// peer_health). Comes from scenario.Oracles via the ORACLES env var.
 	EnabledOracles []string
+	// SubmitWorkers, when > 1, switches the soak to the concurrent
+	// client-side-sequence submission path (see runConcurrentSoak) with this
+	// many submitter goroutines — the lever for high, tunable tx-per-ledger.
+	// 0/1 keeps the legacy single-threaded auto-fill loop. Values > 1 imply
+	// local signing (the managed-sequence path always signs locally).
+	SubmitWorkers int
 }
 
 // oracleEnabled reports whether name is in cfg.EnabledOracles, treating an
@@ -213,6 +219,23 @@ func SoakRun(ctx context.Context, cfg SoakConfig) (*Stats, error) {
 			}
 			return 0, fmt.Errorf("unknown node %q", name)
 		}
+	}
+
+	// High-throughput path: concurrent submitters with client-side sequence
+	// management. The serial loop below stays the default for SubmitWorkers<=1.
+	if cfg.SubmitWorkers > 1 {
+		return runConcurrentSoak(ctx, cfg, soakDeps{
+			submit:  submit,
+			nodes:   nodes,
+			rec:     rec,
+			txLog:   txLog,
+			gen:     gen,
+			rng:     rng,
+			stats:   stats,
+			poller:  poller,
+			hang:    hang,
+			enabled: enabled,
+		})
 	}
 
 	var ticker *time.Ticker

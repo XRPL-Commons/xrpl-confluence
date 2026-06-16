@@ -484,6 +484,12 @@ func loadSoakConfig() (*runners.SoakConfig, error) {
 	}
 	rate := envFloat("TX_RATE", 0)
 	rotate, _ := strconv.ParseInt(envDefault("ROTATE_EVERY", "1000"), 10, 64)
+	workers := envInt("SUBMIT_WORKERS", 1)
+	// The managed-sequence concurrent path always signs locally — concurrent
+	// submission is only safe with client-side sequence allocation.
+	if workers > 1 {
+		base.LocalSign = true
+	}
 	// Liveness defaults — wide enough to not flap on cold-boot account funding
 	// but tight enough to catch a real stall within the soak budget.
 	stallDur, _ := time.ParseDuration(envDefault("LIVENESS_STALL_THRESHOLD", "30s"))
@@ -505,6 +511,7 @@ func loadSoakConfig() (*runners.SoakConfig, error) {
 		LivenessSampleInterval: sampleDur,
 		LivenessMinPeers:       minPeers,
 		EnabledOracles:         enabled,
+		SubmitWorkers:          workers,
 	}, nil
 }
 

@@ -57,6 +57,12 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 		return nil
 	}
 
+	// Each O(n^2) phase submits n*(n-1) txs; they drain a bounded number per
+	// ledger, so the inter-phase wait must scale with the mesh size or phase 2
+	// races ahead and references trust lines that are not yet validated
+	// (tecPATH_DRY). 250/ledger is a deliberately conservative drain estimate.
+	meshLedgers := 2 + (n*(n-1))/250
+
 	// Phase 1: trust-line mesh.
 	first := true
 	for i := 0; i < n; i++ {
@@ -82,7 +88,7 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 			}
 		}
 	}
-	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
+	if err := waitForValidation(client, meshLedgers, 3*time.Minute); err != nil {
 		return fmt.Errorf("wait for trustset validation: %w", err)
 	}
 
@@ -115,7 +121,7 @@ func SetupState(client *rpcclient.Client, pool *Pool) error {
 			}
 		}
 	}
-	if err := waitForValidation(client, 2, 2*time.Minute); err != nil {
+	if err := waitForValidation(client, meshLedgers, 3*time.Minute); err != nil {
 		return fmt.Errorf("wait for iou payment validation: %w", err)
 	}
 

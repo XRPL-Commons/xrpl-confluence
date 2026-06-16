@@ -271,6 +271,11 @@ full
 [ssl_verify]
 0
 
+[transaction_queue]
+minimum_txn_in_ledger=1000
+target_txn_in_ledger=1000
+maximum_txn_per_account=1000
+
 {amendments}""".format(
         peer_port = PEER_PORT,
         rpc_port = RPC_PORT,
@@ -293,7 +298,7 @@ def _render_goxrpl_config(index, node_key, peers):
 compression = false
 peer_private = 1
 peers_max = 50
-max_transactions = 250
+max_transactions = 1000
 ips = []
 ips_fixed = [
 {ips_fixed}]
@@ -389,13 +394,13 @@ ledgers_in_queue = 20
 minimum_queue_size = 2000
 retry_sequence_percent = 25
 minimum_escalation_multiplier = 500
-minimum_txn_in_ledger = 5
+minimum_txn_in_ledger = 1000
 minimum_txn_in_ledger_standalone = 1000
-target_txn_in_ledger = 50
+target_txn_in_ledger = 1000
 maximum_txn_in_ledger = 0
 normal_consensus_increase_percent = 20
 slow_consensus_decrease_percent = 50
-maximum_txn_per_account = 10
+maximum_txn_per_account = 1000
 minimum_last_ledger_buffer = 2
 zero_basefee_transaction_feelevel = 256000
 """.format(
