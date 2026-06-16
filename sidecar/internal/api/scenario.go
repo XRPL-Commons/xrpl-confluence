@@ -54,12 +54,15 @@ type NodeGroup struct {
 }
 
 type Workload struct {
-	Kind         string             `yaml:"kind" json:"kind"`
-	TxRate       int                `yaml:"tx_rate,omitempty" json:"tx_rate,omitempty"`
-	Accounts     int                `yaml:"accounts,omitempty" json:"accounts,omitempty"`
-	RotateEvery  int                `yaml:"rotate_every,omitempty" json:"rotate_every,omitempty"`
-	MutationRate float64            `yaml:"mutation_rate,omitempty" json:"mutation_rate,omitempty"`
-	Reproducer   *WorkloadReproducer `yaml:"reproducer,omitempty" json:"reproducer,omitempty"`
+	Kind         string  `yaml:"kind" json:"kind"`
+	TxRate       int     `yaml:"tx_rate,omitempty" json:"tx_rate,omitempty"`
+	Accounts     int     `yaml:"accounts,omitempty" json:"accounts,omitempty"`
+	RotateEvery  int     `yaml:"rotate_every,omitempty" json:"rotate_every,omitempty"`
+	MutationRate float64 `yaml:"mutation_rate,omitempty" json:"mutation_rate,omitempty"`
+	// SubmitWorkers > 1 enables the concurrent client-side-sequence submission
+	// path (high, tunable tx-per-ledger). Default 0/1 = serial auto-fill loop.
+	SubmitWorkers int                 `yaml:"submit_workers,omitempty" json:"submit_workers,omitempty"`
+	Reproducer    *WorkloadReproducer `yaml:"reproducer,omitempty" json:"reproducer,omitempty"`
 }
 
 type WorkloadReproducer struct {
@@ -74,19 +77,19 @@ type Chaos struct {
 // sidecar/internal/fuzz/chaos/schedule_parse.go. Fields are typed mostly as
 // hints; the chaos runner does its own validation and dispatches on Type.
 type ChaosEvent struct {
-	Step         int              `yaml:"step,omitempty" json:"step,omitempty"`
-	RecoverAfter int              `yaml:"recover_after,omitempty" json:"recover_after,omitempty"`
-	Type         string           `yaml:"type,omitempty" json:"type,omitempty"`
-	Container    string           `yaml:"container,omitempty" json:"container,omitempty"`
-	From         string           `yaml:"from,omitempty" json:"from,omitempty"`
-	To           string           `yaml:"to,omitempty" json:"to,omitempty"`
-	Iface        string           `yaml:"iface,omitempty" json:"iface,omitempty"`
-	DelayMs      int              `yaml:"delay_ms,omitempty" json:"delay_ms,omitempty"`
-	DelayMsMin   int              `yaml:"delay_ms_min,omitempty" json:"delay_ms_min,omitempty"`
-	DelayMsMax   int              `yaml:"delay_ms_max,omitempty" json:"delay_ms_max,omitempty"`
-	Feature      string           `yaml:"feature,omitempty" json:"feature,omitempty"`
-	Target       string           `yaml:"target,omitempty" json:"target,omitempty"`
-	Recurring    *RecurringChaos  `yaml:"recurring,omitempty" json:"recurring,omitempty"`
+	Step         int             `yaml:"step,omitempty" json:"step,omitempty"`
+	RecoverAfter int             `yaml:"recover_after,omitempty" json:"recover_after,omitempty"`
+	Type         string          `yaml:"type,omitempty" json:"type,omitempty"`
+	Container    string          `yaml:"container,omitempty" json:"container,omitempty"`
+	From         string          `yaml:"from,omitempty" json:"from,omitempty"`
+	To           string          `yaml:"to,omitempty" json:"to,omitempty"`
+	Iface        string          `yaml:"iface,omitempty" json:"iface,omitempty"`
+	DelayMs      int             `yaml:"delay_ms,omitempty" json:"delay_ms,omitempty"`
+	DelayMsMin   int             `yaml:"delay_ms_min,omitempty" json:"delay_ms_min,omitempty"`
+	DelayMsMax   int             `yaml:"delay_ms_max,omitempty" json:"delay_ms_max,omitempty"`
+	Feature      string          `yaml:"feature,omitempty" json:"feature,omitempty"`
+	Target       string          `yaml:"target,omitempty" json:"target,omitempty"`
+	Recurring    *RecurringChaos `yaml:"recurring,omitempty" json:"recurring,omitempty"`
 }
 
 // RecurringChaos mirrors the recurring template shape parsed by schedule_parse.go.

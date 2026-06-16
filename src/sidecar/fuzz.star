@@ -121,6 +121,7 @@ def launch_soak(
     rotate_every = 1000,
     mutation_rate = 0.0,
     accounts = 50,
+    submit_workers = 0,
     corpus_host_path = "",
     alert_webhook_url = "",
     oracles = ""):
@@ -186,6 +187,11 @@ def launch_soak(
         env_vars["ALERT_WEBHOOK_URL"] = alert_webhook_url
     if oracles != "":
         env_vars["ORACLES"] = oracles
+    if submit_workers > 1:
+        # Concurrent client-side-sequence submission path. The sidecar forces
+        # local signing when SUBMIT_WORKERS > 1; set it here too for clarity.
+        env_vars["SUBMIT_WORKERS"] = str(submit_workers)
+        env_vars["LOCAL_SIGN"] = "1"
 
     return plan.add_service(
         name = "fuzz-soak",

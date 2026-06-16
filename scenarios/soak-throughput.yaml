@@ -1,0 +1,36 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: soak-throughput
+  description: >
+    High-throughput soak. submit_workers > 1 switches the workload to the
+    concurrent client-side-sequence submission path: each account's sequences
+    are allocated locally and signed offline, and blobs are spread round-robin
+    across every node's RPC. This sustains hundreds–thousands of transactions
+    per ledger (bounded by minimum_txn_in_ledger in the node config, which acts
+    as the block-size governor). Tune submit_workers / accounts / tx_rate to the
+    throughput you want; tx_rate 0 = uncapped.
+topology:
+  rippled:
+    count: 3
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 2
+    image: goxrpl:latest
+workload:
+  kind: soak
+  tx_rate: 0
+  accounts: 40
+  submit_workers: 40
+  rotate_every: 100000
+  mutation_rate: 0.01
+observability:
+  enabled: false
+budget:
+  duration: 15m
+  stop_on:
+    - first_divergence
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health

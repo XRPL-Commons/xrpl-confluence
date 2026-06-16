@@ -46,6 +46,7 @@ func Compile(s *api.Scenario) ([]byte, error) {
 		"accounts":             s.Workload.Accounts,
 		"rotate_every":         s.Workload.RotateEvery,
 		"mutation_rate":        s.Workload.MutationRate,
+		"submit_workers":       s.Workload.SubmitWorkers,
 		"enable_observability": s.Observability.Enabled,
 		"alert_webhook_url":    s.Observability.AlertWebhookURL,
 		"oracles":              oraclesCSV,
