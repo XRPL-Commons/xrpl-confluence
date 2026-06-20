@@ -3,6 +3,7 @@ package chaos
 import (
 	"context"
 	"log"
+	"sort"
 	"sync"
 )
 
@@ -93,19 +94,34 @@ func (s *ChaosScheduler) Step(ctx context.Context, step int) {
 		s.pending[recoverAt] = append(s.pending[recoverAt], e)
 	}
 
-	if entries, ok := s.pending[step]; ok {
-		for _, e := range entries {
-			if err := e.Apply.Recover(ctx); err != nil {
-				s.stats.EventsErrored++
-				s.emit(AuditEntry{Event: e.Apply.Name(), Phase: "recover", Step: step, Error: err.Error()})
-				log.Printf("chaos: recover %s at step %d: %v", e.Apply.Name(), step, err)
-				continue
+	// Recover any pending entries whose recoverAt has been reached. The soak
+	// runner ticks every N txs, so recoverAt rarely lands exactly on a tick;
+	// fire on the first tick at or after recoverAt — mirroring Apply above —
+	// otherwise a restart's Stop is never followed by Start and the node is
+	// stranded down (issue #724 reproducer: both go-xrpl stopped, never
+	// restarted, so the rejoin path is never exercised).
+	if len(s.pending) > 0 {
+		due := make([]int, 0, len(s.pending))
+		for at := range s.pending {
+			if step >= at {
+				due = append(due, at)
 			}
-			s.stats.EventsRecovered++
-			s.emit(AuditEntry{Event: e.Apply.Name(), Phase: "recover", Step: step})
-			log.Printf("chaos: recover %s at step %d", e.Apply.Name(), step)
 		}
-		delete(s.pending, step)
+		sort.Ints(due)
+		for _, at := range due {
+			for _, e := range s.pending[at] {
+				if err := e.Apply.Recover(ctx); err != nil {
+					s.stats.EventsErrored++
+					s.emit(AuditEntry{Event: e.Apply.Name(), Phase: "recover", Step: step, Error: err.Error()})
+					log.Printf("chaos: recover %s at step %d (due %d): %v", e.Apply.Name(), step, at, err)
+					continue
+				}
+				s.stats.EventsRecovered++
+				s.emit(AuditEntry{Event: e.Apply.Name(), Phase: "recover", Step: step})
+				log.Printf("chaos: recover %s at step %d (due %d)", e.Apply.Name(), step, at)
+			}
+			delete(s.pending, at)
+		}
 	}
 }
 

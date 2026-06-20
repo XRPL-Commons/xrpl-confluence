@@ -1,0 +1,24 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: soak-5r1g
+  description: 5 rippled + 1 go-xrpl (quorum 5) — CONTROL A. Pause 2 rippled -> 4<5 halt (no validated tip), unpause -> do rippled rejoin? rippled double-fault recovery baseline.
+topology:
+  rippled:
+    count: 5
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 1
+    image: goxrpl:latest
+workload:
+  kind: soak
+  tx_rate: 8
+  accounts: 15
+  rotate_every: 1000
+  mutation_rate: 0.0
+budget:
+  duration: 25m
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health

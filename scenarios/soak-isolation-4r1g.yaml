@@ -1,0 +1,26 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: soak-isolation-4r1g
+  description: 4 rippled + 1 go-xrpl — network validates WITHOUT goxrpl (quorum 4); isolates catch-up convergence from quorum deadlock via controlled pause/unpause lag injection
+topology:
+  rippled:
+    count: 4
+    image: rippleci/rippled:2.6.2
+  goxrpl:
+    count: 1
+    image: goxrpl:latest
+workload:
+  kind: soak
+  tx_rate: 8
+  accounts: 15
+  rotate_every: 1000
+  mutation_rate: 0.0
+observability:
+  enabled: false
+budget:
+  duration: 25m
+oracles:
+  - state_diff
+  - consensus_liveness
+  - peer_health
