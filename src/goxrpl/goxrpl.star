@@ -4,7 +4,15 @@ PEER_PORT = 51235
 RPC_PORT = 5005
 WS_PORT = 6006
 
-def launch(plan, count, image, network_config, name_prefix = "goxrpl", enable_chaos_tools = False):
+def launch(
+    plan,
+    count,
+    image,
+    network_config,
+    name_prefix = "goxrpl",
+    enable_chaos_tools = False,
+    force_update = False,
+):
     """Launch go-xrpl validator nodes.
 
     Args:
@@ -21,6 +29,12 @@ def launch(plan, count, image, network_config, name_prefix = "goxrpl", enable_ch
     Returns:
         List of node descriptors with service references.
     """
+    if type(count) != "int":
+        fail("go-xrpl count must be an integer")
+    if count <= 0:
+        return []
+    if type(image) != "string" or image.strip() == "" or image.strip() != image:
+        fail("go-xrpl image must be non-empty")
     nodes = []
     configs = {}
 
@@ -44,7 +58,7 @@ def launch(plan, count, image, network_config, name_prefix = "goxrpl", enable_ch
             labels = {"fuzzer.role": "node"},
         )
 
-    services = plan.add_services(configs)
+    services = plan.add_services(configs, force_update = force_update)
 
     for name, service in services.items():
         nodes.append({
@@ -53,6 +67,7 @@ def launch(plan, count, image, network_config, name_prefix = "goxrpl", enable_ch
             "service": service,
             "rpc_url": "http://{}:{}".format(service.ip_address, RPC_PORT),
             "ws_url": "ws://{}:{}".format(service.ip_address, WS_PORT),
+            "peer_url": "{}:{}".format(service.ip_address, PEER_PORT),
             "peer_port": PEER_PORT,
         })
 

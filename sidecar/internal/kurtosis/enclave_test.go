@@ -78,13 +78,15 @@ func TestInspectEnclave_ParsesServices(t *testing.T) {
 }
 
 func TestRemoveEnclave_NotFound(t *testing.T) {
-	f := &fakeCLI{
-		next: func(args []string) (string, string, error) {
-			return "", "enclave not found", errors.New("exit status 1")
-		},
-	}
-	if err := RemoveEnclave(context.Background(), f, "missing-enc"); err != nil {
-		t.Fatalf("RemoveEnclave should swallow not-found: %v", err)
+	for _, message := range []string{"enclave not found", "No enclave found with identifier 'missing-enc'"} {
+		t.Run(message, func(t *testing.T) {
+			f := &fakeCLI{next: func(args []string) (string, string, error) {
+				return "", message, errors.New("exit status 1")
+			}}
+			if err := RemoveEnclave(context.Background(), f, "missing-enc"); err != nil {
+				t.Fatalf("RemoveEnclave should swallow not-found: %v", err)
+			}
+		})
 	}
 }
 

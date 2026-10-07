@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -84,5 +85,88 @@ func TestScenarioYAMLRoundtrip(t *testing.T) {
 	}
 	if _, ok := asMap["api_version"]; !ok {
 		t.Fatalf("expected api_version key in JSON, got %s", b)
+	}
+}
+
+func TestScenarioLocalNetworkFields(t *testing.T) {
+	const yamlInput = `
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: local-rippled
+topology:
+  rippled:
+    count: 2
+    entrypoint: ["/usr/bin/rippled", "--start"]
+    config:
+      reporting: ["reporting = false"]
+    nodes:
+      - image: rippled:one
+      - config:
+          reporting: ["reporting = true"]
+  goxrpl:
+    count: 0
+network:
+  network_id: 10001
+  amendments: []
+  veto_amendments:
+    - id: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      name: FeatureFoo
+workload:
+  kind: none
+services:
+  dashboard: false
+  control: false
+  sidecar_image: sidecar:test
+budget: {}
+`
+	var s Scenario
+	if err := yaml.Unmarshal([]byte(yamlInput), &s); err != nil {
+		t.Fatalf("yaml unmarshal: %v", err)
+	}
+	if s.Network == nil || s.Network.NetworkID == nil || *s.Network.NetworkID != 10001 || s.Network.Amendments == nil || len(*s.Network.Amendments) != 0 {
+		t.Fatalf("network: %+v", s.Network)
+	}
+	if s.Network.VetoAmendments == nil || len(*s.Network.VetoAmendments) != 1 {
+		t.Fatalf("veto amendments: %+v", s.Network.VetoAmendments)
+	}
+	if len(s.Topology.Rippled.Nodes) != 2 || s.Topology.Rippled.Nodes[0].Image == nil || *s.Topology.Rippled.Nodes[0].Image != "rippled:one" || s.Topology.Rippled.Nodes[1].Image != nil {
+		t.Fatalf("node overrides: %+v", s.Topology.Rippled.Nodes)
+	}
+	if s.Services == nil || s.Services.Dashboard == nil || *s.Services.Dashboard || s.Services.Control == nil || *s.Services.Control {
+		t.Fatalf("services: %+v", s.Services)
+	}
+}
+
+func TestScenarioJSONPreservesExplicitEmptyOptionals(t *testing.T) {
+	emptyImage := ""
+	zeroNetworkID := 0
+	emptyAmendments := []Amendment{}
+	input := Scenario{
+		Topology: Topology{Rippled: NodeGroup{Nodes: []NodeOverride{{Image: &emptyImage}}}},
+		Network: &NetworkConfig{
+			NetworkID:      &zeroNetworkID,
+			Amendments:     &emptyAmendments,
+			VetoAmendments: &emptyAmendments,
+		},
+	}
+	b, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{`"image":""`, `"network_id":0`, `"amendments":[]`, `"veto_amendments":[]`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("JSON omitted explicit optional %s: %s", want, b)
+		}
+	}
+	var roundtrip Scenario
+	if err := json.Unmarshal(b, &roundtrip); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if roundtrip.Topology.Rippled.Nodes[0].Image == nil || *roundtrip.Topology.Rippled.Nodes[0].Image != "" {
+		t.Fatalf("explicit empty image did not round-trip: %+v", roundtrip.Topology.Rippled.Nodes)
+	}
+	if roundtrip.Network == nil || roundtrip.Network.NetworkID == nil || *roundtrip.Network.NetworkID != 0 || roundtrip.Network.Amendments == nil || roundtrip.Network.VetoAmendments == nil || len(*roundtrip.Network.Amendments) != 0 || len(*roundtrip.Network.VetoAmendments) != 0 {
+		t.Fatalf("explicit empty network fields did not round-trip: %+v", roundtrip.Network)
 	}
 }

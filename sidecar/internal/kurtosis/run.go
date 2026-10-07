@@ -152,12 +152,16 @@ func Run(ctx context.Context, cli CLI, opts RunOptions) (*RunResult, error) {
 		// and every retry — wipe any pre-existing or half-booted enclave so
 		// the package upload starts against a clean state.
 		if opts.TearDownFirst || attempt > 1 {
-			var buf bytes.Buffer
-			_ = cli.Run(ctx, []string{"enclave", "rm", "-f", opts.Enclave}, nil, &buf, &buf)
+			if err := RemoveEnclave(ctx, cli, opts.Enclave); err != nil {
+				return nil, err
+			}
 		}
 
 		var stdout, stderr bytes.Buffer
 		err, bootHang, hangFor := runWithWatchdog(ctx, cli, args, &stdout, &stderr, opts.BootHangThreshold)
+		if err == nil && starlarkFailed(stdout.String()+"\n"+stderr.String()) {
+			err = errors.New("Kurtosis reported a Starlark failure")
+		}
 		if err == nil {
 			return &RunResult{
 				EnclaveID: opts.Enclave,
@@ -307,4 +311,16 @@ func lastLines(s string, n int) string {
 		return s
 	}
 	return strings.Join(lines[len(lines)-n:], "\n")
+}
+
+func starlarkFailed(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "There was an error interpreting Starlark code") ||
+			strings.HasPrefix(line, "There was an error executing Starlark code") ||
+			strings.HasPrefix(line, "Error encountered running Starlark code") {
+			return true
+		}
+	}
+	return false
 }

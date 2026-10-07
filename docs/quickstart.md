@@ -66,7 +66,7 @@ To boot, run until the budget elapses (or a `stop_on` predicate fires), and tear
 command:
 
 ```bash
-confluence run -f scenarios/soak-mixed-3x2.yaml
+confluence run scenarios/soak-mixed-3x2.yaml
 ```
 
 ## Option B — the legacy Makefile
@@ -132,3 +132,4 @@ nodes** are required for oracle comparison, and `soak` / `chaos` / `shrink` requ
 - [Test Suites](/test-suites) — pick the right suite for what you want to prove.
 - [Sidecar & Oracle](/sidecar-oracle) — how divergence is detected.
 - [Dashboard](/dashboard) — watch the network live.
+- [Custom local networks](/local-networks) — package a participant-supplied rippled binary and resume a persistent network.

@@ -184,3 +184,23 @@ func TestRun_TearDownFirst(t *testing.T) {
 		t.Errorf("first call should be enclave rm, got %v", f.runs[0].args)
 	}
 }
+
+func TestRunRejectsZeroExitStarlarkFailure(t *testing.T) {
+	f := &fakeCLI{next: func(args []string) (string, string, error) {
+		return "There was an error interpreting Starlark code\nEvaluation error: empty services", "", nil
+	}}
+	_, err := Run(context.Background(), f, RunOptions{Enclave: "enc", PackageDir: "."})
+	if err == nil || !strings.Contains(err.Error(), "empty services") {
+		t.Fatalf("must surface Starlark failure despite zero exit: %v", err)
+	}
+}
+
+func TestRunDoesNotLaunchAfterFailedReset(t *testing.T) {
+	f := &fakeCLI{next: func(args []string) (string, string, error) {
+		return "", "cannot remove enclave", errors.New("daemon unavailable")
+	}}
+	_, err := Run(context.Background(), f, RunOptions{Enclave: "enc", PackageDir: ".", TearDownFirst: true})
+	if err == nil || len(f.runs) != 1 {
+		t.Fatalf("failed reset must abort before run: %v, %v", err, f.runs)
+	}
+}

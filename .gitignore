@@ -29,3 +29,7 @@ bin/
 node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Python network checks
+__pycache__/
+*.pyc

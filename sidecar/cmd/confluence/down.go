@@ -19,7 +19,7 @@ func newDownCmd() *cobra.Command {
 func newDownCmdWith(d *downDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "down [ENCLAVE]",
-		Short: "Tear down the current confluence enclave",
+		Short: "Remove the enclave and all its ledger data",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  d.run,
 	}
@@ -81,6 +81,10 @@ func (d *downDeps) tearDown(ctx context.Context, enclaveName string) (string, er
 	}
 
 	if err := kurtosis.RemoveEnclave(ctx, d.cli, enclaveName); err != nil {
+		return "", err
+	}
+
+	if err := discovery.RemoveNetwork(enclaveName); err != nil {
 		return "", err
 	}
 

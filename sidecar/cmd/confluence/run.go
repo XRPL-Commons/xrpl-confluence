@@ -43,7 +43,7 @@ func newRunCmdWith(up *upDeps, down *downDeps) *cobra.Command {
 	return cmd
 }
 
-func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error {
+func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) (resultErr error) {
 	scenarioPath := args[0]
 
 	// Load and validate scenario upfront so we can compute the timeout.
@@ -72,6 +72,10 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	resumeOnFinding, _ := cmd.Flags().GetBool("resume-on-finding")
 	rotateLogsDir, _ := cmd.Flags().GetString("rotate-logs")
 
+	if s.Workload.Kind == api.WorkloadNone {
+		return fmt.Errorf("use 'confluence up -f SCENARIO' for a persistent network with workload.kind: none")
+	}
+
 	// Mirror the override into the in-memory scenario used for the timeout
 	// computation below; the boot path will reapply it after re-loading the
 	// scenario from disk so the compiled args + control service see the
@@ -96,7 +100,9 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	ctx, cancel := context.WithTimeout(rootCtx, hardTimeout)
 	defer cancel()
 
+	enclaveName, _ := cmd.Root().PersistentFlags().GetString("enclave")
 	bootOpts := bootOptions{
+		EnclaveName:       enclaveName,
 		ScenarioPath:      scenarioPath,
 		PackageDir:        packageDir,
 		TearDownFirst:     tearDownFirst,
@@ -112,6 +118,16 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	cur, err := up.boot(ctx, cmd, bootOpts)
 	if err != nil {
 		return err
+	}
+
+	if doDown {
+		defer func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(rootCtx), 60*time.Second)
+			defer cleanupCancel()
+			if _, err := down.tearDown(cleanupCtx, cur.EnclaveID); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("teardown: %w", err))
+			}
+		}()
 	}
 
 	// Optional per-enclave kurtosis log rotation — useful for overnight runs
@@ -178,13 +194,6 @@ func runRun(cmd *cobra.Command, args []string, up *upDeps, down *downDeps) error
 	}
 
 	durationMS := time.Since(startTime).Milliseconds()
-
-	// Optional teardown.
-	if doDown {
-		if _, err := down.tearDown(ctx, cur.EnclaveID); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: teardown failed: %v\n", err)
-		}
-	}
 
 	// Output.
 	exitCode := exitCodeForRun(run)

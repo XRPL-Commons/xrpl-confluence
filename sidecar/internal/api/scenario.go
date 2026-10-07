@@ -31,9 +31,11 @@ type Scenario struct {
 	Kind          string           `yaml:"kind" json:"kind"`
 	Metadata      ScenarioMetadata `yaml:"metadata" json:"metadata"`
 	Topology      Topology         `yaml:"topology" json:"topology"`
+	Network       *NetworkConfig   `yaml:"network,omitempty" json:"network,omitempty"`
 	Workload      Workload         `yaml:"workload" json:"workload"`
 	Chaos         Chaos            `yaml:"chaos,omitempty" json:"chaos,omitempty"`
 	Observability Observability    `yaml:"observability,omitempty" json:"observability,omitempty"`
+	Services      *ServicesConfig  `yaml:"services,omitempty" json:"services,omitempty"`
 	Budget        Budget           `yaml:"budget" json:"budget"`
 	Oracles       []string         `yaml:"oracles,omitempty" json:"oracles,omitempty"`
 }
@@ -49,8 +51,58 @@ type Topology struct {
 }
 
 type NodeGroup struct {
-	Count int    `yaml:"count" json:"count"`
-	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+	Count      int                 `yaml:"count" json:"count"`
+	Image      string              `yaml:"image,omitempty" json:"image,omitempty"`
+	Entrypoint []string            `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+	Config     map[string][]string `yaml:"config,omitempty" json:"config,omitempty"`
+	Nodes      []NodeOverride      `yaml:"nodes,omitempty" json:"nodes,omitempty"`
+}
+
+// NodeOverride contains optional settings for one rippled node. Nodes are
+// positional in the topology.rippled.nodes list and are named rippled-0,
+// rippled-1, and so on by the compiler.
+type NodeOverride struct {
+	Image      *string             `yaml:"image,omitempty" json:"image,omitempty"`
+	Entrypoint []string            `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+	Config     map[string][]string `yaml:"config,omitempty" json:"config,omitempty"`
+}
+
+// Amendment is a rippled amendment vote applied at genesis. An amendment in
+// amendments is an upvote; one in veto_amendments is a veto vote.
+type Amendment struct {
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
+}
+
+// NetworkConfig contains the optional genesis network settings. A nil field on
+// Scenario means use the standard network configuration and preserves the
+// legacy compiler argument shape.
+type NetworkConfig struct {
+	NetworkID      *int         `yaml:"network_id,omitempty" json:"network_id,omitempty"`
+	Amendments     *[]Amendment `yaml:"amendments,omitempty" json:"amendments,omitempty"`
+	VetoAmendments *[]Amendment `yaml:"veto_amendments,omitempty" json:"veto_amendments,omitempty"`
+}
+
+// ServicesConfig controls optional sidecar services. Pointer booleans retain
+// the distinction between an omitted default and an explicit false.
+type ServicesConfig struct {
+	Dashboard    *bool  `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
+	Control      *bool  `yaml:"control,omitempty" json:"control,omitempty"`
+	SidecarImage string `yaml:"sidecar_image,omitempty" json:"sidecar_image,omitempty"`
+}
+
+const (
+	// DefaultNetworkID is the private-network ID used by the Starlark topology.
+	DefaultNetworkID = 10000
+)
+
+// EffectiveNetworkID applies the private-network default when network_id is
+// omitted. Explicit zero is retained as a valid network ID.
+func (s *Scenario) EffectiveNetworkID() int {
+	if s == nil || s.Network == nil || s.Network.NetworkID == nil {
+		return DefaultNetworkID
+	}
+	return *s.Network.NetworkID
 }
 
 type Workload struct {

@@ -1,0 +1,28 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: local-network
+  description: Three rippled validators using the participant-built local image.
+
+topology:
+  rippled:
+    count: 3
+    image: rippled-hackathon:local
+  # Custom genesis/network settings are currently for rippled-only networks.
+  goxrpl:
+    count: 0
+
+network:
+  network_id: 10000
+
+workload:
+  kind: none
+
+# The duration is retained for tooling that displays scenario metadata; `up`
+# keeps this network running until `down` or an explicit `--reset`.
+budget:
+  duration: 30m
+
+services:
+  dashboard: true
+  control: true

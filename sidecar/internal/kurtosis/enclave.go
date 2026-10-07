@@ -118,6 +118,7 @@ func RemoveEnclave(ctx context.Context, cli CLI, enclave string) error {
 	errText := strings.ToLower(stderr.String())
 	if strings.Contains(errText, "not found") ||
 		strings.Contains(errText, "no such enclave") ||
+		strings.Contains(errText, "no enclave found with identifier") ||
 		strings.Contains(errText, "doesn't exist") {
 		return nil
 	}

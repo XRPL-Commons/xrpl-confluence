@@ -1,0 +1,30 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: none-rippled
+topology:
+  rippled:
+    count: 2
+    image: rippled:custom
+    entrypoint: ["/usr/bin/rippled", "--start"]
+    config:
+      reporting: ["reporting = false"]
+    nodes:
+      - image: rippled:one
+      - config:
+          reporting: ["reporting = true"]
+  goxrpl:
+    count: 0
+network:
+  network_id: 10001
+  amendments: []
+  veto_amendments:
+    - id: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      name: FeatureFoo
+workload:
+  kind: none
+services:
+  dashboard: false
+  control: false
+  sidecar_image: sidecar:test
+budget: {}
