@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	RunStatusRunning          = "running"
-	RunStatusCompletedBudget  = "completed_budget"
-	RunStatusCompletedStopOn  = "completed_stop_on"
-	RunStatusFailed           = "failed"
+	RunStatusRunning         = "running"
+	RunStatusCompletedBudget = "completed_budget"
+	RunStatusCompletedStopOn = "completed_stop_on"
+	RunStatusFailed          = "failed"
 )
 
 // stopOnMatches maps each stop_on value to the finding kinds that trigger it.
@@ -68,7 +68,8 @@ func (rs *runStore) list() []*Run {
 	defer rs.mu.RUnlock()
 	out := make([]*Run, 0, len(rs.runs))
 	for _, r := range rs.runs {
-		out = append(out, r)
+		cp := cloneRun(r)
+		out = append(out, &cp)
 	}
 	return out
 }
@@ -128,6 +129,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		ReproducerIDs: []string{},
 	}
 
+	response := StartRunResponse{Run: cloneRun(run)}
 	s.runsMu.Lock()
 	s.runs.add(run)
 	s.currentRun = run
@@ -135,7 +137,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 
 	go s.watchRun(run, req.Scenario)
 
-	writeJSON(w, http.StatusOK, StartRunResponse{Run: *run})
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +166,7 @@ func (s *Server) runByID(w http.ResponseWriter, r *http.Request) {
 	// after the run closed (corpus mirror latency) get appended on read.
 	s.syncFindingsForRun(run)
 	s.runs.mu.RLock()
-	cp := *run
+	cp := cloneRun(run)
 	s.runs.mu.RUnlock()
 	writeJSON(w, http.StatusOK, cp)
 }
@@ -283,10 +285,11 @@ func (s *Server) closeRun(run *Run, status, triggerID string) {
 	run.Status = status
 	run.EndedAt = &now
 	run.TriggerFinding = triggerID
+	completed := cloneRun(run)
 	s.runs.mu.Unlock()
 
 	if s.eventBus != nil {
-		s.eventBus.Publish(Event{Type: "run_completed", Payload: *run, Ts: now.UnixMilli()})
+		s.eventBus.Publish(Event{Type: "run_completed", Payload: completed, Ts: now.UnixMilli()})
 	}
 }
 
@@ -312,4 +315,12 @@ func (s *Server) syncFindingsForRun(run *Run) {
 		}
 		run.FindingIDs = append(run.FindingIDs, f.ID)
 	}
+}
+
+func cloneRun(run *Run) Run {
+	copy := *run
+	copy.StopOn = append([]string(nil), run.StopOn...)
+	copy.FindingIDs = append([]string{}, run.FindingIDs...)
+	copy.ReproducerIDs = append([]string(nil), run.ReproducerIDs...)
+	return copy
 }

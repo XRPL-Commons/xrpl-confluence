@@ -136,7 +136,7 @@ confluence status -w
 ### One-shot run (CI / fire-and-forget)
 
 ```bash
-confluence run -f scenarios/soak-mixed-3x2.yaml
+confluence run scenarios/soak-mixed-3x2.yaml
 ```
 
 Exits when the budget elapses or a `stop_on` predicate fires.
@@ -183,3 +183,4 @@ confluence down               # current enclave
 
 - [Quickstart](/quickstart) — the legacy Makefile flow and `main.star` arguments.
 - [Test Suites](/test-suites) — what each `workload.kind` does.
+- [Custom local networks](/local-networks) — persistent `workload.kind: none` networks and participant images.

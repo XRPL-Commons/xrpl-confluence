@@ -325,7 +325,7 @@ func TestClient_ValidateScenario_Valid(t *testing.T) {
 		APIVersion: "confluence/v1",
 		Kind:       "Scenario",
 		Metadata:   api.ScenarioMetadata{Name: "my-test"},
-		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 1}},
+		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 2}},
 		Workload:   api.Workload{Kind: "soak"},
 		Budget:     api.Budget{Duration: "10m"},
 	}
@@ -395,7 +395,7 @@ func TestClient_StartRun(t *testing.T) {
 		APIVersion: "confluence/v1",
 		Kind:       "Scenario",
 		Metadata:   api.ScenarioMetadata{Name: "client-run-test"},
-		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 1}},
+		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 2}},
 		Workload:   api.Workload{Kind: "soak"},
 		Budget:     api.Budget{Duration: "50ms"},
 	}
@@ -423,7 +423,7 @@ func TestClient_GetRun(t *testing.T) {
 		APIVersion: "confluence/v1",
 		Kind:       "Scenario",
 		Metadata:   api.ScenarioMetadata{Name: "client-get-run-test"},
-		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 1}},
+		Topology:   api.Topology{Rippled: api.NodeGroup{Count: 2}},
 		Workload:   api.Workload{Kind: "soak"},
 		Budget:     api.Budget{Duration: "50ms"},
 	}

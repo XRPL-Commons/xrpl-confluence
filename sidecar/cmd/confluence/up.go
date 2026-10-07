@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,8 +39,11 @@ func newUpCmdWith(d *upDeps) *cobra.Command {
 		RunE:  d.run,
 	}
 	cmd.Flags().StringP("scenario", "f", "", "Path to a Scenario YAML file (required)")
-	cmd.Flags().String("enclave", "", "Enclave name (default: derived from scenario name)")
 	cmd.Flags().String("package", ".", "Kurtosis package dir (default: current dir)")
+	cmd.Flags().Bool("resume", false, "Restart a local network using its existing ledger data")
+	cmd.Flags().Bool("reset", false, "Delete the existing local network and its ledger data before booting")
+	cmd.MarkFlagsMutuallyExclusive("resume", "reset")
+	cmd.Flags().Duration("wait-network", 180*time.Second, "Timeout for local-network validated ledger agreement and progress")
 	cmd.Flags().Bool("tear-down-first", true, "Tear down any existing enclave with the same name before booting")
 	cmd.Flags().Duration("wait-control", 60*time.Second, "How long to wait for control service to become healthy")
 	cmd.Flags().Duration("boot-hang-threshold", 90*time.Second, "Kill the kurtosis CLI if it stays silent this long (watchdog for the 1-in-3 0% CPU hangs); 0 disables")
@@ -79,7 +81,13 @@ func (d *upDeps) run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--scenario flag required")
 	}
 
-	enclaveName, _ := cmd.Flags().GetString("enclave")
+	enclaveName, _ := cmd.Root().PersistentFlags().GetString("enclave")
+	resume, _ := cmd.Flags().GetBool("resume")
+	reset, _ := cmd.Flags().GetBool("reset")
+	waitNetwork, _ := cmd.Flags().GetDuration("wait-network")
+	if waitNetwork < time.Second {
+		return fmt.Errorf("--wait-network must be at least 1s")
+	}
 	packageDir, _ := cmd.Flags().GetString("package")
 	tearDownFirst, _ := cmd.Flags().GetBool("tear-down-first")
 	waitControl, _ := cmd.Flags().GetDuration("wait-control")
@@ -103,6 +111,9 @@ func (d *upDeps) run(cmd *cobra.Command, _ []string) error {
 		RebuildGoXRPL:     rebuildGoXRPL,
 		RebuildRippled:    rebuildRippled,
 		WithDashboard:     withDashboard,
+		Resume:            resume,
+		Reset:             reset,
+		WaitNetwork:       waitNetwork,
 	})
 	if err != nil {
 		return err
@@ -132,6 +143,9 @@ type bootOptions struct {
 	// after load (so the compile pass and the control-service budget both see
 	// the override). Used by `confluence run --budget 8h`.
 	BudgetOverride time.Duration
+	Resume         bool
+	Reset          bool
+	WaitNetwork    time.Duration
 }
 
 // boot loads, validates, and runs a scenario YAML through kurtosis, waits for
@@ -159,6 +173,23 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 
 	if errs := scenario.Validate(s); len(errs) > 0 {
 		return nil, outputValidation(cmd, false, errs)
+	}
+
+	if enclaveName == "" {
+		enclaveName = s.Metadata.Name
+	}
+	if enclaveName == "" {
+		return nil, fmt.Errorf("metadata.name or --enclave required")
+	}
+	networkOnly := s.Workload.Kind == api.WorkloadNone
+	if (o.Resume || o.Reset) && !networkOnly {
+		return nil, fmt.Errorf("--resume and --reset require workload.kind: none")
+	}
+	if networkOnly {
+		if err := d.checkNetworkLifecycle(ctx, s, enclaveName, o); err != nil {
+			return nil, err
+		}
+		tearDownFirst = false
 	}
 
 	// Image rebuilds run BEFORE compile so the topology image fields are
@@ -191,11 +222,31 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 		return nil, fmt.Errorf("scenario compile: %w", err)
 	}
 
-	if enclaveName == "" {
-		enclaveName = s.Metadata.Name
-	}
-	if enclaveName == "" {
-		return nil, fmt.Errorf("metadata.name or --enclave required")
+	bootHang := o.BootHangThreshold
+	maxAttempts := 3
+	if networkOnly {
+		maxAttempts = 1
+		if bootHang > 0 && bootHang < o.WaitNetwork+time.Minute {
+			bootHang = o.WaitNetwork + time.Minute
+		}
+		argsJSON, err = networkRunArgs(argsJSON, o)
+		if err != nil {
+			return nil, err
+		}
+		if o.Reset {
+			if err := kurtosis.RemoveEnclave(ctx, d.cli, enclaveName); err != nil {
+				return nil, err
+			}
+			if current, err := discovery.Read(); err == nil && current.EnclaveID == enclaveName {
+				if err := discovery.Remove(); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if err := discovery.WriteNetwork(enclaveName, argsJSON); err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "Starting network %q; waiting for advancing, matching validated ledgers...\n", enclaveName)
 	}
 
 	_, err = kurtosis.Run(ctx, d.cli, kurtosis.RunOptions{
@@ -203,8 +254,8 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 		PackageDir:        packageDir,
 		Args:              argsJSON,
 		TearDownFirst:     tearDownFirst,
-		MaxAttempts:       3,
-		BootHangThreshold: o.BootHangThreshold,
+		MaxAttempts:       maxAttempts,
+		BootHangThreshold: bootHang,
 		OnRetry: func(attempt int, prev error) {
 			fmt.Fprintf(cmd.ErrOrStderr(),
 				"kurtosis run transient failure (attempt %d/3): %v\nretrying with a fresh enclave...\n",
@@ -212,7 +263,7 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 		},
 		OnBootHang: func(silenceFor time.Duration) {
 			fmt.Fprintf(cmd.ErrOrStderr(),
-				"kurtosis boot watchdog tripped after %.0fs of silence; killing and retrying...\n",
+				"kurtosis boot watchdog tripped after %.0fs of silence; stopping the boot attempt...\n",
 				silenceFor.Seconds())
 		},
 	})
@@ -220,9 +271,12 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 		return nil, err
 	}
 
-	controlURL, err := d.waitForControl(ctx, enclaveName, waitControl)
-	if err != nil {
-		return nil, err
+	controlURL := ""
+	if controlEnabled(argsJSON) {
+		controlURL, err = d.waitForControl(ctx, enclaveName, waitControl)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cur := &discovery.Current{
@@ -230,6 +284,11 @@ func (d *upDeps) boot(ctx context.Context, cmd *cobra.Command, o bootOptions) (*
 		ControlURL: controlURL,
 		Scenario:   s.Metadata.Name,
 		StartedAt:  time.Now().UTC(),
+	}
+	if networkOnly {
+		if err := d.discoverNetwork(ctx, cur, s.Topology.Rippled.Count, s.Topology.Goxrpl.Count, argsJSON); err != nil {
+			return nil, err
+		}
 	}
 	if err := discovery.Write(cur); err != nil {
 		return nil, err
@@ -280,21 +339,13 @@ func (d *upDeps) probeHealthz(ctx context.Context, controlURL string, deadline t
 }
 
 func emitUp(cmd *cobra.Command, cur *discovery.Current) error {
-	asJSON, _ := cmd.Flags().GetBool("json")
-	if asJSON {
-		payload := struct {
-			EnclaveID  string    `json:"enclave_id"`
-			ControlURL string    `json:"control_url"`
-			Scenario   string    `json:"scenario"`
-			StartedAt  time.Time `json:"started_at"`
-		}{
-			EnclaveID:  cur.EnclaveID,
-			ControlURL: cur.ControlURL,
-			Scenario:   cur.Scenario,
-			StartedAt:  cur.StartedAt,
-		}
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+	if jsonMode(cmd) {
+		return emitJSON(cmd, cur)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Confluence enclave %q ready at %s\n", cur.EnclaveID, cur.ControlURL)
-	return nil
+	if cur.ControlURL != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Confluence enclave %q ready at %s\n", cur.EnclaveID, cur.ControlURL)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Confluence enclave %q ready\n", cur.EnclaveID)
+	}
+	return printEndpoints(cmd.OutOrStdout(), cur)
 }

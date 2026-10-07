@@ -41,17 +41,11 @@ func runEvents(cmd *cobra.Command, _ []string) error {
 	}
 	defer body.Close()
 
-	done := make(chan error, 1)
-	go func() {
-		done <- streamSSEAsNDJSON(body, cmd.OutOrStdout())
-	}()
-
-	select {
-	case <-ctx.Done():
+	err = streamSSEAsNDJSON(body, cmd.OutOrStdout())
+	if ctx.Err() != nil {
 		return nil
-	case err := <-done:
-		return err
 	}
+	return err
 }
 
 // streamSSEAsNDJSON reads an SSE stream from r and writes each data line as a

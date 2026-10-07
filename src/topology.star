@@ -107,8 +107,171 @@ GENESIS_AMENDMENTS = [
     ("FBD513F1B893AC765B78F250E6FFA6A11B573209D1842ADC787C850696741288", "fix1578"),
 ]
 
+# These settings affect the private network bootstrap and therefore have
+# dedicated typed inputs.  Allowing them through arbitrary section overrides
+# would let one node silently start with a different network or quorum.
+GUARDED_RIPPLED_SECTIONS = [
+    "server",
+    "port_peer",
+    "port_rpc",
+    "port_ws",
+    "node_db",
+    "database_path",
+    "debug_logfile",
+    "ips_fixed",
+    "validation_seed",
+    "validation_quorum",
+    "validators_file",
+    "network_id",
+    "amendments",
+    "veto_amendments",
+]
 
-def generate_network_config(plan, rippled_count, goxrpl_count):
+
+def _is_identifier(value):
+    """Return whether a value is a safe rippled section name."""
+    if type(value) != "string" or value == "" or value.strip() != value:
+        return False
+    for index in range(len(value)):
+        char = value[index]
+        if char in "\r\n[]":
+            return False
+    return True
+
+
+def _is_amendment_name(value):
+    if type(value) != "string" or value == "":
+        return False
+    for index in range(len(value)):
+        char = value[index]
+        if char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_":
+            return False
+    return True
+
+
+def _is_amendment_id(value):
+    if type(value) != "string" or len(value) != 64:
+        return False
+    for index in range(len(value)):
+        char = value[index]
+        if char not in "0123456789abcdefABCDEF":
+            return False
+    return True
+
+
+def _normalise_amendments(value, field_name, default_value):
+    """Validate amendment objects and return canonical ``{id,name}`` maps."""
+    if value == None:
+        value = default_value
+    if type(value) != "list":
+        fail("{} must be a list".format(field_name))
+    result = []
+    seen = {}
+    for index, amendment in enumerate(value):
+        if type(amendment) != "dict":
+            fail("{}[{}] must be an object with id and name".format(field_name, index))
+        amendment_id = amendment.get("id")
+        amendment_name = amendment.get("name")
+        if not _is_amendment_id(amendment_id):
+            fail("{}[{}].id must be exactly 64 hexadecimal characters".format(field_name, index))
+        if not _is_amendment_name(amendment_name):
+            fail("{}[{}].name must contain only letters, digits, and underscores".format(field_name, index))
+        canonical_id = amendment_id.upper()
+        if canonical_id in seen:
+            fail("{}[{}].id duplicates {}[{}]".format(field_name, index, field_name, seen[canonical_id]))
+        seen[canonical_id] = index
+        result.append({"id": canonical_id, "name": amendment_name})
+    return result
+
+
+def _normalise_network_config(network_config):
+    """Validate network settings and apply the legacy amendment defaults."""
+    if network_config == None:
+        network_config = {}
+    if type(network_config) != "dict":
+        fail("network_config must be an object")
+    network_id = network_config.get("network_id", NETWORK_ID)
+    if type(network_id) != "int":
+        fail("network_config.network_id must be an integer")
+    if network_id < 0 or network_id > 4294967295:
+        fail("network_config.network_id must be between 0 and 4294967295 (got {})".format(network_id))
+    amendments_value = network_config.get("amendments")
+    amendments_omitted = "amendments" not in network_config or amendments_value == None
+    amendments = _normalise_amendments(
+        amendments_value,
+        "network_config.amendments",
+        [{"id": entry[0], "name": entry[1]} for entry in GENESIS_AMENDMENTS],
+    )
+    veto_amendments = _normalise_amendments(
+        network_config.get("veto_amendments"),
+        "network_config.veto_amendments",
+        [],
+    )
+    if amendments_omitted and len(veto_amendments) > 0:
+        filtered_amendments = []
+        for amendment in amendments:
+            vetoed = False
+            for veto in veto_amendments:
+                if amendment["id"] == veto["id"]:
+                    vetoed = True
+                    break
+            if not vetoed:
+                filtered_amendments.append(amendment)
+        amendments = filtered_amendments
+    for amendment in amendments:
+        for veto in veto_amendments:
+            if amendment["id"] == veto["id"]:
+                fail("amendment {} appears in both amendments and veto_amendments".format(amendment["id"]))
+    return {
+        "network_id": network_id,
+        "amendments": amendments,
+        "veto_amendments": veto_amendments,
+    }
+
+
+def _validate_config_overrides(config, field_name):
+    """Validate section maps and reject injection-prone lines."""
+    if config == None:
+        return {}
+    if type(config) != "dict":
+        fail("{} must be an object mapping sections to line lists".format(field_name))
+    result = {}
+    for section, lines in config.items():
+        if not _is_identifier(section):
+            fail("{}.{} is not a valid rippled section name".format(field_name, section))
+        if section.lower() in GUARDED_RIPPLED_SECTIONS:
+            fail("{}.{} is guarded; use the dedicated network/topology field".format(field_name, section))
+        if type(lines) != "list":
+            fail("{}.{} must be a list of config lines".format(field_name, section))
+        checked = []
+        for index, line in enumerate(lines):
+            if type(line) != "string" or "\n" in line or "\r" in line:
+                fail("{}.{}[{}] must be a single-line config entry".format(field_name, section, index))
+            if line.strip().startswith("["):
+                fail("{}.{}[{}] cannot inject an INI section".format(field_name, section, index))
+            checked.append(line)
+        result[section] = checked
+    return result
+
+
+def _merge_config_overrides(group_config, node_config):
+    merged = {}
+    for section, lines in group_config.items():
+        merged[section] = lines
+    for section, lines in node_config.items():
+        # Per-node sections replace the complete group section.
+        merged[section] = lines
+    return merged
+
+
+def generate_network_config(
+    plan,
+    rippled_count,
+    goxrpl_count,
+    network_config = None,
+    rippled_config = None,
+    rippled_nodes = None,
+):
     """Generate shared network configuration for all nodes.
 
     Creates per-node config files with validator keys, peer lists, and
@@ -118,13 +281,33 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
         plan: Kurtosis plan object.
         rippled_count: Number of rippled nodes.
         goxrpl_count: Number of go-xrpl nodes.
+        network_config: Optional network_id/amendment vote settings.
+        rippled_config: Optional map of section names to replacement lines.
+        rippled_nodes: Optional per-node overrides.
 
     Returns:
         A files artifact containing configuration for all nodes.
     """
+    if rippled_count < 0 or goxrpl_count < 0:
+        fail("rippled_count and goxrpl_count must be non-negative")
     total = rippled_count + goxrpl_count
     if total > len(VALIDATOR_KEYS):
         fail("Requested {} nodes but only {} validator keys are available".format(total, len(VALIDATOR_KEYS)))
+
+    network_settings = _normalise_network_config(network_config)
+    group_config = _validate_config_overrides(rippled_config, "rippled_config")
+    if rippled_nodes != None and len(rippled_nodes) != rippled_count:
+        fail("rippled_nodes must contain exactly {} entries (got {})".format(rippled_count, len(rippled_nodes)))
+    node_configs = []
+    if rippled_nodes == None:
+        node_configs = [{} for _ in range(rippled_count)]
+    else:
+        for index, override in enumerate(rippled_nodes):
+            if override == None:
+                fail("rippled_nodes[{}] must be an object".format(index))
+            if "name" in override and override["name"] != "rippled-{}".format(index):
+                fail("rippled_nodes[{}].name must be rippled-{}".format(index, index))
+            node_configs.append(_validate_config_overrides(override.get("config"), "rippled_nodes[{}].config".format(index)))
 
     # Build service name lists
     rippled_names = ["rippled-{}".format(i) for i in range(rippled_count)]
@@ -149,6 +332,8 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
             peers = peers,
             rippled_count = rippled_count,
             total_validators = total,
+            network_config = network_settings,
+            config_overrides = _merge_config_overrides(group_config, node_configs[i]),
         )
 
     # Per-node go-xrpl configs
@@ -172,13 +357,24 @@ def generate_network_config(plan, rippled_count, goxrpl_count):
     return plan.render_templates(
         name = "network-config",
         config = {
-            name: struct(template = content, data = {})
+            # Inject content as a value so user-provided braces (including
+            # JSON/TOML and custom config) are never interpreted as Go-template
+            # actions by Kurtosis.
+            name: struct(template = "{{.config}}", data = {"config": content})
             for name, content in config_files.items()
         },
     )
 
 
-def _render_rippled_config(index, node_key, peers, rippled_count, total_validators):
+def _render_rippled_config(
+    index,
+    node_key,
+    peers,
+    rippled_count,
+    total_validators,
+    network_config = None,
+    config_overrides = None,
+):
     """Render a complete rippled.cfg for a private test network node.
 
     Quorum is sized over the full UNL (rippled + go-xrpl). Formula:
@@ -194,7 +390,7 @@ def _render_rippled_config(index, node_key, peers, rippled_count, total_validato
     for peer in peers:
         peers_section += "{} {}\n".format(peer, PEER_PORT)
 
-    return """\
+    rendered = """\
 [server]
 port_peer
 port_rpc
@@ -281,11 +477,45 @@ maximum_txn_per_account=1000
         rpc_port = RPC_PORT,
         ws_port = WS_PORT,
         peers = peers_section,
-        network_id = NETWORK_ID,
+        network_id = NETWORK_ID if network_config == None else network_config["network_id"],
         quorum = quorum,
         seed = node_key["seed"],
-        amendments = _render_rippled_amendments(),
+        amendments = _render_rippled_amendments(
+            GENESIS_AMENDMENTS if network_config == None else network_config["amendments"],
+            [] if network_config == None else network_config["veto_amendments"],
+        ),
     )
+    return _replace_ini_sections(rendered, config_overrides or {})
+
+
+def _replace_ini_sections(content, overrides):
+    """Replace complete INI sections while preserving deterministic ordering."""
+    if len(overrides) == 0:
+        return content
+    sections = {}
+    order = []
+    current = None
+    for line in content.split("\n"):
+        if len(line) >= 2 and line.startswith("[") and line.endswith("]"):
+            current = line[1:-1]
+            sections[current] = []
+            order.append(current)
+        elif current != None:
+            sections[current].append(line)
+
+    for section, lines in overrides.items():
+        if section not in sections:
+            order.append(section)
+        sections[section] = lines
+
+    rendered = ""
+    for section in order:
+        rendered += "[{}]\n".format(section)
+        body = "\n".join(sections[section])
+        if body != "":
+            rendered += body + "\n"
+        rendered += "\n"
+    return rendered
 
 
 def _render_goxrpl_config(index, node_key, peers):
@@ -436,17 +666,30 @@ validator_list_keys = []
 """.format(entries = entries)
 
 
-def _render_rippled_amendments():
+def _render_rippled_amendments(amendments = None, veto_amendments = None):
     """Render the rippled [amendments] config section.
 
-    Lists every amendment in GENESIS_AMENDMENTS as "<64-hex-id> <Name>" so
+    Lists each requested amendment as "<64-hex-id> <Name>" so
     rippled votes them up. At --start (FRESH) rippled builds the genesis
     Amendments SLE from getDesired() = supported amendments voted up, which
-    then equals exactly GENESIS_AMENDMENTS (the go-xrpl genesis set).
+    also includes any amendments the binary votes up by default. Explicit
+    vetoes remove features from those defaults.
     """
+    if amendments == None:
+        amendments = [{"id": entry[0], "name": entry[1]} for entry in GENESIS_AMENDMENTS]
+    if veto_amendments == None:
+        veto_amendments = []
     lines = "[amendments]\n"
-    for entry in GENESIS_AMENDMENTS:
-        lines += "{} {}\n".format(entry[0], entry[1])
+    for entry in amendments:
+        amendment_id = entry["id"] if "id" in entry else entry[0]
+        amendment_name = entry["name"] if "name" in entry else entry[1]
+        lines += "{} {}\n".format(amendment_id, amendment_name)
+    if len(veto_amendments) > 0:
+        lines += "\n[veto_amendments]\n"
+        for entry in veto_amendments:
+            amendment_id = entry["id"] if "id" in entry else entry[0]
+            amendment_name = entry["name"] if "name" in entry else entry[1]
+            lines += "{} {}\n".format(amendment_id, amendment_name)
     return lines
 
 

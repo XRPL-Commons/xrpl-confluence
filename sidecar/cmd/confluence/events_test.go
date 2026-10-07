@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func eventsServer(t *testing.T) (*httptest.Server, *server.EventBus) {
 func TestEvents_NDJSON_HappyPath(t *testing.T) {
 	srv, bus := eventsServer(t)
 
-	outBuf := &bytes.Buffer{}
+	outBuf := &lockedBuffer{}
 	root := newRootCmd()
 	root.SetOut(outBuf)
 	root.SetErr(&bytes.Buffer{})
@@ -149,4 +150,21 @@ func TestEvents_SSEServer_Serves(t *testing.T) {
 	if out != `{"type":"ping"}` {
 		t.Errorf("unexpected output: %q", out)
 	}
+}
+
+type lockedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }

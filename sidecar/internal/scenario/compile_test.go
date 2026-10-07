@@ -34,6 +34,27 @@ func TestCompileChaosGolden(t *testing.T) {
 	assertJSONEqualToFile(t, got, "testdata/chaos-compiled.json")
 }
 
+func TestCompileLocalNetworkGolden(t *testing.T) {
+	s, err := Load("testdata/none-rippled.yaml")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got, err := Compile(s)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	assertJSONEqualToFile(t, got, "testdata/none-rippled-compiled.json")
+	var args map[string]any
+	if err := json.Unmarshal(got, &args); err != nil {
+		t.Fatalf("unmarshal compiled args: %v", err)
+	}
+	for _, key := range []string{"soak_args", "chaos_args"} {
+		if _, ok := args[key]; ok {
+			t.Fatalf("none workload must not emit %s: %s", key, got)
+		}
+	}
+}
+
 func TestCompileRejectsInvalidScenario(t *testing.T) {
 	s, err := Load("testdata/soak.yaml")
 	if err != nil {
@@ -58,6 +79,25 @@ func TestCompileRejectsReplay(t *testing.T) {
 	s.Workload.Reproducer = &api.WorkloadReproducer{ID: "rpr_0000000000000000000000000"}
 	if _, err := Compile(s); err == nil || !strings.Contains(err.Error(), "replay") {
 		t.Fatalf("expected replay rejection from Compile guard, got err=%v", err)
+	}
+}
+
+func TestCompileOmitsEmptyImagesForStarlarkDefaults(t *testing.T) {
+	s := validScenario()
+	s.Topology.Rippled.Image = ""
+	s.Topology.Goxrpl.Image = ""
+	got, err := Compile(s)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	var args map[string]any
+	if err := json.Unmarshal(got, &args); err != nil {
+		t.Fatalf("unmarshal compiled args: %v", err)
+	}
+	for _, key := range []string{"rippled_image", "goxrpl_image"} {
+		if _, ok := args[key]; ok {
+			t.Fatalf("empty image must be omitted from %s: %s", key, got)
+		}
 	}
 }
 

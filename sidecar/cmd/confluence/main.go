@@ -29,6 +29,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newScenarioCmd())
 	root.AddCommand(newUpCmd())
 	root.AddCommand(newDownCmd())
+	root.AddCommand(newEndpointsCmd())
 	root.AddCommand(newLsCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newFindingsCmd())

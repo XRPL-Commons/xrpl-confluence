@@ -1,0 +1,50 @@
+apiVersion: confluence/v1
+kind: Scenario
+metadata:
+  name: local-network-mixed
+  description: Three rippled validators with a per-node image and config override.
+
+topology:
+  rippled:
+    count: 3
+    image: rippled-hackathon:local
+    entrypoint:
+      - /usr/local/bin/rippled
+    config:
+      transaction_queue:
+        - minimum_txn_in_ledger=1000
+        - target_txn_in_ledger=1000
+    nodes:
+      - {}
+      - image: rippled-hackathon:local-canary
+        config:
+          transaction_queue:
+            - minimum_txn_in_ledger=500
+            - target_txn_in_ledger=500
+      - {}
+  # A custom network/config is rippled-only for now. Do not add go-xrpl here:
+  # mixed genesis generation is intentionally rejected by the compiler.
+  goxrpl:
+    count: 0
+
+network:
+  network_id: 10000
+  # These are genesis VOTES. They require matching support in the supplied
+  # binary; they do not force an unknown amendment on a node.
+  amendments:
+    - id: 8CC0774A3BF66D1D22E76BBDA8E8A232E6B6313834301B3B23E8601196AE6455
+      name: AMM
+  veto_amendments:
+    - id: 56B241D7A43D40354D02A9DC4C8DF5C7A1F930D92A9035C4E12291B3CA3E1C2B
+      name: Clawback
+
+workload:
+  kind: none
+
+budget:
+  duration: 30m
+
+services:
+  dashboard: false
+  control: true
+  sidecar_image: xrpl-confluence-sidecar:latest

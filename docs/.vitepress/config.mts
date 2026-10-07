@@ -32,6 +32,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/overview' },
           { text: 'Quickstart', link: '/quickstart' },
+          { text: 'Custom local networks', link: '/local-networks' },
         ],
       },
       {
@@ -60,6 +61,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/overview' },
           { text: 'Quickstart', link: '/quickstart' },
+          { text: 'Custom local networks', link: '/local-networks' },
         ],
       },
       {

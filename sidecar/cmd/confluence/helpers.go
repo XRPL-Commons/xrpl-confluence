@@ -43,7 +43,7 @@ func resolveControlURL(ctx context.Context, cmd *cobra.Command, cli kurtosis.CLI
 		return "", fmt.Errorf("no --control-url, no --enclave, and no discovery file: %w", err)
 	}
 	if cur.ControlURL == "" {
-		return "", fmt.Errorf("discovery file has no control_url; re-run with --control-url or --enclave")
+		return "", fmt.Errorf("this network has no control service; use confluence endpoints to access node RPC, or enable services.control and reset the network")
 	}
 	return cur.ControlURL, nil
 }

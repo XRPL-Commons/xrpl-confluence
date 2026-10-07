@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/client"
+	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/discovery"
 	"github.com/XRPL-Commons/xrpl-confluence/sidecar/internal/kurtosis"
 	"github.com/spf13/cobra"
 )
@@ -70,12 +71,20 @@ func (d *lsDeps) probe(ctx context.Context, name string) enclaveRow {
 	row := enclaveRow{EnclaveID: name, Status: "unhealthy"}
 
 	svc, err := kurtosis.InspectService(ctx, d.cli, name, "confluence-control")
-	if err != nil || svc.IPAddress == "" {
+	if err != nil {
+		if raw, readErr := discovery.ReadNetwork(name); readErr == nil && !controlEnabled(raw) {
+			row.Status = "control disabled"
+			return row
+		}
 		row.Status = fmt.Sprintf("unhealthy: %v", err)
 		return row
 	}
 
-	controlURL := fmt.Sprintf("http://%s:8090", svc.IPAddress)
+	controlURL := serviceAddress(svc, "http", "http", 8090)
+	if controlURL == "" {
+		row.Status = "unhealthy: no control endpoint"
+		return row
+	}
 	row.ControlURL = controlURL
 
 	opts := []client.Option{}

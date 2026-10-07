@@ -8,7 +8,7 @@ DASHBOARD_PORT = 8080
 RPC_PORT = 5005
 WS_PORT = 6006
 
-def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
+def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files, force_update = False):
     """Launch the monitoring dashboard.
 
     Args:
@@ -73,6 +73,7 @@ def launch(plan, rippled_nodes, goxrpl_nodes, dashboard_files):
                 "PORT": str(DASHBOARD_PORT),
             },
         ),
+        force_update = force_update,
     )
 
     plan.print("Dashboard available at http://{}:{}".format(service.ip_address, DASHBOARD_PORT))

@@ -4,7 +4,14 @@ CONTROL_PORT = 8090
 RPC_PORT = 5005
 
 
-def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-confluence-sidecar:latest"):
+def launch(
+    plan,
+    rippled_nodes,
+    goxrpl_nodes,
+    scenarios_artifact,
+    image = "xrpl-confluence-sidecar:latest",
+    force_update = False,
+):
     """Launch the confluence-control service.
 
     Args:
@@ -70,6 +77,7 @@ def launch(plan, rippled_nodes, goxrpl_nodes, scenarios_artifact, image = "xrpl-
                 "/var/confluence/findings": Directory(persistent_key = "confluence-findings"),
             },
         ),
+        force_update = force_update,
     )
 
     plan.print("Control service available at http://{}:{}/v1/healthz".format(service.ip_address, CONTROL_PORT))
